@@ -18,7 +18,7 @@ void DisplayError(LPCTSTR desc) {
     0, 
     NULL);
 
-  HLOCAL lpDisplayBuf = LocalAlloc(LMEM_ZEROINIT, (lstrlen((LPCTSTR)lpMsgBuf) + 56) * sizeof(TCHAR));
+  HLOCAL lpDisplayBuf = LocalAlloc(LMEM_ZEROINIT, (lstrlen((LPCTSTR)lpMsgBuf) + 560) * sizeof(TCHAR));
 
   if (FAILED(StringCchPrintf(
               (LPTSTR)lpDisplayBuf, 

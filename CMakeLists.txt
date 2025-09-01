@@ -16,6 +16,14 @@ endforeach()
 # Configure to build 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${SRC}/builds")
 
+find_package(SDL3 REQUIRED)
+find_package(SDL3_image REQUIRED)
+find_package(SDL3_ttf REQUIRED)
+
+include_directories(${SDL3_INCLUDE_DIRS})
+include_directories(${SDL3_image_INCLUDE_DIRS})
+include_directories(${SDL3_ttf_INCLUDE_DIRS})
+
 file(GLOB_RECURSE ${PROJECT_NAME}_All
   ${SRC}/src/*.cpp
   ${SRC}/src/*.c
@@ -24,7 +32,7 @@ file(GLOB_RECURSE ${PROJECT_NAME}_All
   ${SRC}/src/*.rc
 )
 
-add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_All})
+add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_All})
 set_property(TARGET ${PROJECT_NAME} PROPERTY
   MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
@@ -33,9 +41,12 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   ${SRC}/include
 )
 
-#target_link_libraries(${PROJECT_NAME} PRIVATE 
-#  ${SRC}/lib/detours.lib
-#)
+target_link_libraries(${PROJECT_NAME} PRIVATE 
+  Shlwapi.lib
+  SDL3::SDL3
+  SDL3_image::SDL3_image
+  SDL3_ttf::SDL3_ttf
+)
 
 ## EnTT Config Options
 #target_compile_definitions(${PROJECT_NAME} PUBLIC
@@ -49,3 +60,20 @@ target_compile_options(${PROJECT_NAME} PRIVATE
   $<$<COMPILE_LANGUAGE:CXX>:/MD>
   $<$<COMPILE_LANGUAGE:CXX>:/W4>
 )
+if(WIN32)
+  add_custom_command(
+      TARGET ${PROJECT_NAME} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SDL3::SDL3-shared> $<TARGET_FILE_DIR:${PROJECT_NAME}>
+      VERBATIM
+  )
+  add_custom_command(
+      TARGET ${PROJECT_NAME} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SDL3_image::SDL3_image-shared> $<TARGET_FILE_DIR:${PROJECT_NAME}>
+      VERBATIM
+  )
+  add_custom_command(
+      TARGET ${PROJECT_NAME} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SDL3_ttf::SDL3_ttf-shared> $<TARGET_FILE_DIR:${PROJECT_NAME}>
+      VERBATIM
+  )
+endif()

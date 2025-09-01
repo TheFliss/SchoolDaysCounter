@@ -20,6 +20,10 @@ void DisplayError(LPCTSTR desc);
 #define ResetTextAttrib SetConsoleTextAttribute(hConsoleOutput, consoleScreenInfo->wAttributes)
 
 #define FunctionHandler(cond, desc) if (cond) {\
+  HANDLE hConsoleOutput;\
+  PCONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = new CONSOLE_SCREEN_BUFFER_INFO{0};\
+  hConsoleOutput = GetStdHandle(STD_OUTPUT_HANDLE);\
+  GetConsoleScreenBufferInfo(hConsoleOutput, consoleScreenInfo);\
   SetConsoleTextAttribute(hConsoleOutput, ConsoleForeground::DARKRED); \
   PROTECT_ERROR_LOG("\n[SDC] error: ");\
   ResetTextAttrib;\
@@ -28,10 +32,27 @@ void DisplayError(LPCTSTR desc);
 }
 
 #define FunctionHandlerD(cond, desc, file) if (cond) {\
+  HANDLE hConsoleOutput;\
+  PCONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = new CONSOLE_SCREEN_BUFFER_INFO{0};\
+  hConsoleOutput = GetStdHandle(STD_OUTPUT_HANDLE);\
+  GetConsoleScreenBufferInfo(hConsoleOutput, consoleScreenInfo);\
   SetConsoleTextAttribute(hConsoleOutput, ConsoleForeground::DARKRED); \
   PROTECT_ERROR_LOG("\n[SDC] error: ");\
   ResetTextAttrib;\
   printf_s(xorstr_("%s: "), file);\
+  DisplayError(xorstr_(TEXT(desc)));\
+  exit(1);\
+}
+
+#define FunctionHandlerWD(cond, desc, file) if (cond) {\
+  HANDLE hConsoleOutput;\
+  PCONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = new CONSOLE_SCREEN_BUFFER_INFO{0};\
+  hConsoleOutput = GetStdHandle(STD_OUTPUT_HANDLE);\
+  GetConsoleScreenBufferInfo(hConsoleOutput, consoleScreenInfo);\
+  SetConsoleTextAttribute(hConsoleOutput, ConsoleForeground::DARKRED); \
+  PROTECT_ERROR_LOG("\n[SDC] error: ");\
+  ResetTextAttrib;\
+  wprintf_s(xorstr_(L"%s: "), file);\
   DisplayError(xorstr_(TEXT(desc)));\
   exit(1);\
 }
@@ -67,6 +88,7 @@ void DisplayError(LPCTSTR desc);
 #define HandleReadFileS(hnd) FunctionHandler(!hnd, "Could not read file")
 #define HandleCreateFileS(hnd) FunctionHandler(hnd == INVALID_HANDLE_VALUE, "Could not open file")
 #define HandleCreateFileSD(hnd, file) FunctionHandlerD(hnd == INVALID_HANDLE_VALUE, "Could not open file", file)
+#define HandleCreateFileWSD(hnd, file) FunctionHandlerWD(hnd == INVALID_HANDLE_VALUE, "Could not open file", file)
 #define HandleSetConsoleTextAttributeS(hnd) FunctionHandler(!hnd, "Could not set console attributes")
 
 #define SetFilePointerS(...) hndFunc(SetFilePointer, __VA_ARGS__)

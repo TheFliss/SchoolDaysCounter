@@ -3,34 +3,37 @@
 
 // Put commonly included files here to speed up the build process
 
-//#define WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #define UNICODE
 
 #include <Windows.h>
-#include <cstddef>
+#include <shlwapi.h>
+#include <locale>
+//#include <cstddef>
 #include <iostream>
-#include <random>
-#include <sstream>
 #include <fstream>
+//#include <random>
+//#include <sstream>
+//#include <fstream>
 #include <string>
 #include <filesystem>
-#include <string_view>
-#include <memory>
-#include <future>
-#include <execution>
-#include <optional>
-#include <chrono>
-#include <format>
-#include <array>
-#include <vector>
-#include <cstdint>
-#include <cstdio>
-#include <regex>
-#include <map>
-#include <set>
-#include <variant>
-#include <algorithm>
+//#include <string_view>
+//#include <memory>
+//#include <future>
+//#include <execution>
+//#include <optional>
+//#include <chrono>
+//#include <format>
+//#include <array>
+//#include <vector>
+//#include <cstdint>
+//#include <cstdio>
+//#include <regex>
+//#include <map>
+//#include <set>
+//#include <variant>
+//#include <algorithm>
 #include <xorstr.hpp>
 
 using namespace std;
@@ -54,6 +57,10 @@ public:
   }
 };
 
+struct sdc_cli_info_t {
+  FilePath original_file_path;
+  bool client_obfuscate;
+};
 
 enum ConsoleForeground
 {
