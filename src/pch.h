@@ -14,10 +14,12 @@
 #include <iostream>
 #include <fstream>
 //#include <random>
-//#include <sstream>
+#include <sstream>
 //#include <fstream>
 #include <string>
 #include <filesystem>
+#include <iomanip>
+#include <ctime>
 //#include <string_view>
 //#include <memory>
 //#include <future>
@@ -26,7 +28,7 @@
 //#include <chrono>
 //#include <format>
 //#include <array>
-//#include <vector>
+#include <vector>
 //#include <cstdint>
 //#include <cstdio>
 //#include <regex>
@@ -34,7 +36,11 @@
 //#include <set>
 //#include <variant>
 //#include <algorithm>
-#include <xorstr.hpp>
+#include "xorstr.hpp"
+
+#include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
+#include <SDL3_image/SDL_image.h>
 
 using namespace std;
 namespace fs = std::filesystem;

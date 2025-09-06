@@ -1,8 +1,10 @@
 
 #include "extwinapi.h"
-#include <SDL3/SDL.h>
-#include <SDL3_ttf/SDL_ttf.h>
-#include <SDL3_image/SDL_image.h>
+#include "timer.h"
+#include "struct_mapping/struct_mapping.h"
+#include "util.h"
+
+using namespace util;
 
 static void usage(const char *prog){
 
@@ -38,46 +40,6 @@ static void test_arg(int i, int argc, const char *argv){
   }
 }
 
-static fs::path getexepath()
-{
-  char path[MAX_PATH] = { 0 };
-  GetModuleFileNameA(NULL, path, MAX_PATH);
-  return fs::path(path).parent_path();
-}
-
-static int get_month_length(int month, int year){
-  DWORD cMonthDays = month-((month > 8) ? 9 : 1);
-  return (month==2) ? 28+!(year&0b11) : (cMonthDays&1 ? 30 : 31);
-}
-
-const char * declination_word(int counter, const char* d0, const char* d1, const char* d2){
-  int cTens = counter%10;
-  return ((counter%100-cTens) != 10) ? ((cTens > 1 && cTens < 5) ? d1 : ((cTens == 1) ? d0 : d2)) : d2;
-};
-
-std::wstring ConvertAnsiToWide(const std::string& str)
-{
-    int count = MultiByteToWideChar(CP_ACP, 0, str.c_str(), (int)str.length(), NULL, 0);
-    std::wstring wstr(count, 0);
-    MultiByteToWideChar(CP_ACP, 0, str.c_str(), (int)str.length(), &wstr[0], count);
-    return wstr;
-}
-
-std::string ConvertWideToUtf8(const std::wstring& wstr)
-{
-    int count = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.length(), NULL, 0, NULL, NULL);
-    std::string str(count, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &str[0], count, NULL, NULL);
-    return str;
-}
-
-std::wstring ConvertUtf8ToWide(const std::string& str)
-{
-    int count = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.length(), NULL, 0);
-    std::wstring wstr(count, 0);
-    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.length(), &wstr[0], count);
-    return wstr;
-}
 int main(int argc, char const *argv[]) {
   setlocale(LC_ALL, "Russian");
   SetConsoleOutputCP(866);
@@ -167,14 +129,25 @@ int main(int argc, char const *argv[]) {
         exit(1);
       }
     }
-    catch(const std::exception& e)
+    catch(const exception& e)
     {
-      std::cerr << "\nException caught while parsing argument \"" << argv[i] << "\": " << e.what() << endl;
+      cerr << "\nException caught while parsing argument \"" << argv[i] << "\": " << e.what() << endl;
         usage(argv[0]);
       return EXIT_FAILURE;
     }
   }
 
+  //string dateString = "2025-09-06 18:09:00";
+  //tm tm_struct = {}; // Initialize to all zeros
+  //istringstream ss(dateString);
+  //ss >> get_time(&tm_struct, "%Y-%m-%d %H:%M:%S"); // Specify the format
+  //if (ss.fail()) {
+  //    cerr << "Date parsing failed!" << endl;
+  //} else {
+  //    time_t time_value = mktime(&tm_struct); // Convert tm to time_t
+  //    // Use time_value as needed
+  //    cout << "Parsed date: " << asctime(localtime(&time_value));
+  //}
 
   //  // 1. Find Progman
   //  HWND progman = FindWindowW(L"Progman", NULL);
@@ -224,6 +197,7 @@ int main(int argc, char const *argv[]) {
 
   FilePath origWallpaper = FilePath(getexepath() / "original.jpg");
   FilePath restoreFile = FilePath(getexepath() / "original_path.txt");
+  FilePath SDCConfigFile = FilePath(getexepath() / "sdc_config.json");
 
   if(restore){
     printf_s(xorstr_("\nRestoring orginal wallpaper\n"));
@@ -235,7 +209,7 @@ int main(int argc, char const *argv[]) {
 
     ReadFileS(hRestoreFile, virtualpointer, size, NULL, NULL);
 
-    std::wstring cyrillic_text = ConvertUtf8ToWide(string((LPCSTR)virtualpointer));
+    wstring cyrillic_text = ConvertUtf8ToWide(string((LPCSTR)virtualpointer));
 
     FunctionHandlerL(!SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, (LPVOID)cyrillic_text.c_str(), SPIF_UPDATEINIFILE), "SDC", "Cannot set wallpaper path");
 #ifdef DEBUG
@@ -245,6 +219,10 @@ int main(int argc, char const *argv[]) {
     CloseHandle(hRestoreFile);
     return 0;
   }
+  //ostringstream out_json_data;
+  //struct_mapping::map_struct_to_json(timers, out_json_data, "  ");
+
+  //cout << out_json_data.str() << endl;
 
   if(update_time < 1){
     printf_s(xorstr_("\nERROR: Update time must be greater than 0\n"));
@@ -273,7 +251,7 @@ int main(int argc, char const *argv[]) {
 
     HandleCreateFileSD(hRestoreFile, restoreFile.fp_s.c_str());
 
-    std::string cyrillic_text = ConvertWideToUtf8(wstring((LPTSTR)szWallpaperPath));
+    string cyrillic_text = ConvertWideToUtf8(wstring((LPTSTR)szWallpaperPath));
 
     WriteFileS(hRestoreFile, cyrillic_text.c_str(), cyrillic_text.length() * sizeof(char), NULL, NULL);
 
@@ -326,123 +304,162 @@ int main(int argc, char const *argv[]) {
     return EXIT_FAILURE;
   }
 
-  int prev_secs = -1;
-  int prev_mins = -1;
-  int prev_days = -1;
-  int prev_hours = -1;
+  vector<unique_ptr<Timer>> timers;
+
+  struct_mapping::reg(&sdc_config_t::background_run, "background_run");
+  struct_mapping::reg(&sdc_config_t::timers, "timers");
+  struct_mapping::reg(&timer_t::text, "text");
+  struct_mapping::reg(&timer_t::end_date, "end_date");
+  struct_mapping::reg(&timer_t::anchor, "anchor");
+  struct_mapping::reg(&timer_t::offset, "offset");
+  struct_mapping::reg(&timer_t::margin, "margin");
+  struct_mapping::reg(&timer_t::detailed_time, "detailed_time");
+  struct_mapping::reg(&timer_t::text_color, "text_color");
+  struct_mapping::reg(&timer_t::bg_color, "bg_color");
+
+  sdc_config_t sdc_config;
+  auto sdccstream = ifstream(SDCConfigFile.fp);
+  struct_mapping::map_json_to_struct(sdc_config, sdccstream);
+
+  {
+    for(auto &x : sdc_config.timers){
+      Timer current_timer(x);
+      timers.push_back(make_unique<Timer>(current_timer));
+    }
+  }
+
+  //cout << ConvertWideToANSI(ConvertUtf8ToWide(sdc_config.timers[0].text)) << endl;
+
+  //int prev_secs = -1;
+  //int prev_mins = -1;
+  //int prev_days = -1;
+  //int prev_hours = -1;
   while(1){
   //SYSTEMTIME st = {2025, 9, 1, 1, 0, 0, 0, 0};
-    SYSTEMTIME st;
-    GetLocalTime(&st);
+    //time_t st1;
+    
+    //string dateString = "2025-09-06 18:09:00";
+    //tm tm_struct = {}; // Initialize to all zeros
+    //istringstream ss(dateString);
+    //ss >> get_time(&tm_struct, "%Y-%m-%d %H:%M:%S"); // Specify the format
+    //if (ss.fail()) {
+    //    cerr << "Date parsing failed!" << endl;
+    //} else {
+    //    char buf[32];
+    //    strftime(buf, 32, "%Y-%m-%d %H:%M:%S", &tm_struct);
+    //    cout << "Parsed date: " << buf << endl;
+    //}
+    //SYSTEMTIME st;
+    //GetLocalTime(&st);
 
-    bool is_summer = st.wMonth > 5 && st.wMonth < 9;
+    //bool is_summer = st.wMonth > 5 && st.wMonth < 9;
 
-    DWORD SchoolDays = (!(st.wYear&0b11)+28)+31*5+30*3;
+    //DWORD SchoolDays = (!(st.wYear&0b11)+28)+31*5+30*3;
 
-    int day_acc = 0;
-    for (int i = 0; i < 9; i++) {
-      int mi = i+(i > 3 ? -3 : 9);
-      if(mi == st.wMonth){
-        day_acc += st.wDay;
-        break;
-      }
-      day_acc += get_month_length(mi, st.wYear);
-    }
+    //int day_acc = 0;
+    //for (int i = 0; i < 9; i++) {
+    //  int mi = i+(i > 3 ? -3 : 9);
+    //  if(mi == st.wMonth){
+    //    day_acc += st.wDay;
+    //    break;
+    //  }
+    //  day_acc += get_month_length(mi, st.wYear);
+    //}
 
-    int curr_seconds = 59-st.wSecond;
-    int curr_mins = 59-st.wMinute;
-    int curr_hours = 23-st.wHour;
-    int curr_days = SchoolDays-day_acc-1;
+    //int curr_seconds = 59-st.wSecond;
+    //int curr_mins = 59-st.wMinute;
+    //int curr_hours = 23-st.wHour;
+    //int curr_days = SchoolDays-day_acc-1;
 
-    if(prev_secs == curr_seconds && prev_mins == curr_mins && prev_hours == curr_hours && prev_days == curr_days){
-      //Sleep(update_time*100);
-      continue;
-    };
+    //if(prev_secs == curr_seconds && prev_mins == curr_mins && prev_hours == curr_hours && prev_days == curr_days){
+    //  //Sleep(update_time*100);
+    //  continue;
+    //};
 
-    prev_secs = curr_seconds;
-    prev_mins = curr_mins;
-    prev_hours = curr_hours;
-    prev_days = curr_days;
+    //prev_secs = curr_seconds;
+    //prev_mins = curr_mins;
+    //prev_hours = curr_hours;
+    //prev_days = curr_days;
 
-    char display_text[250];
-    if(highp){
-      sprintf_s(display_text, xorstr_("До лета осталось: %d %s, %d %s, %d %s и %d %s!"),
-        prev_days,
-        declination_word(prev_days, xorstr_("день"), xorstr_("дня"), xorstr_("дней")),
-        prev_hours,
-        declination_word(prev_hours, xorstr_("час"), xorstr_("часа"), xorstr_("часов")),
-        prev_mins,
-        declination_word(prev_mins, xorstr_("минута"), xorstr_("минуты"), xorstr_("минут")),
-        prev_secs,
-        declination_word(prev_secs, xorstr_("секунда"), xorstr_("секунды"), xorstr_("секунд"))
-      );
-    }else
-    {
-      sprintf_s(display_text, xorstr_("До лета осталось %d %s и %d %s!"),
-        prev_days,
-        declination_word(prev_days, xorstr_("день"), xorstr_("дня"), xorstr_("дней")),
-        prev_hours,
-        declination_word(prev_hours, xorstr_("час"), xorstr_("часа"), xorstr_("часов"))
-      );
-    }
+    //char display_text[250];
+    //if(highp){
+    //  sprintf_s(display_text, xorstr_("До лета осталось: %d %s, %d %s, %d %s и %d %s!"),
+    //    prev_days,
+    //    declination_word(prev_days, xorstr_("день"), xorstr_("дня"), xorstr_("дней")),
+    //    prev_hours,
+    //    declination_word(prev_hours, xorstr_("час"), xorstr_("часа"), xorstr_("часов")),
+    //    prev_mins,
+    //    declination_word(prev_mins, xorstr_("минута"), xorstr_("минуты"), xorstr_("минут")),
+    //    prev_secs,
+    //    declination_word(prev_secs, xorstr_("секунда"), xorstr_("секунды"), xorstr_("секунд"))
+    //  );
+    //}else
+    //{
+    //  sprintf_s(display_text, xorstr_("До лета осталось %d %s и %d %s!"),
+    //    prev_days,
+    //    declination_word(prev_days, xorstr_("день"), xorstr_("дня"), xorstr_("дней")),
+    //    prev_hours,
+    //    declination_word(prev_hours, xorstr_("час"), xorstr_("часа"), xorstr_("часов"))
+    //  );
+    //}
 
-    #ifdef DEBUG
+    //#ifdef DEBUG
 
-    DWORD cMonthDays = get_month_length(st.wMonth, st.wYear);
-    std::cout << "Time (UTC): "
-              << "\nisLeapYear " << (!(st.wYear&0b11))
-              << "\nwYear " << st.wYear
-              << "\nwMonth " << st.wMonth
-              << "\nwDay " << st.wDay
-              << "\nwHour " << st.wHour
-              << "\nwMinute " << st.wMinute
-              << "\nSchoolDays " << SchoolDays
-              << "\ncMonthDays " << cMonthDays
-              << "\nis_summer " << is_summer
-              << "\nday_acc " << day_acc
-              << std::endl;
-    #endif
+    //DWORD cMonthDays = get_month_length(st.wMonth, st.wYear);
+    //cout << "Time (UTC): "
+    //          << "\nisLeapYear " << (!(st.wYear&0b11))
+    //          << "\nwYear " << st.wYear
+    //          << "\nwMonth " << st.wMonth
+    //          << "\nwDay " << st.wDay
+    //          << "\nwHour " << st.wHour
+    //          << "\nwMinute " << st.wMinute
+    //          << "\nSchoolDays " << SchoolDays
+    //          << "\ncMonthDays " << cMonthDays
+    //          << "\nis_summer " << is_summer
+    //          << "\nday_acc " << day_acc
+    //          << endl;
+    //#endif
 
-    // Render text to a surface
-    SDL_Surface* textSurface = TTF_RenderText_Blended(font, display_text, strlen(display_text), textColor);
-    if (!textSurface){
-      printf_s(xorstr_("Text surface could not initialize! SDL_Error: %s\n"), SDL_GetError());
-      TTF_Quit();
-      SDL_Quit();
-      return EXIT_FAILURE;
-    }
-    int lmargin_x = margin_x*imageSurface->w/100;
-    int lmargin_y = margin_y*imageSurface->h/100;
+    //// Render text to a surface
+    //SDL_Surface* textSurface = TTF_RenderText_Blended(font, display_text, strlen(display_text), textColor);
+    //if (!textSurface){
+    //  printf_s(xorstr_("Text surface could not initialize! SDL_Error: %s\n"), SDL_GetError());
+    //  TTF_Quit();
+    //  SDL_Quit();
+    //  return EXIT_FAILURE;
+    //}
+    //int lmargin_x = margin_x*imageSurface->w/100;
+    //int lmargin_y = margin_y*imageSurface->h/100;
 
-    SDL_Rect textRect = {lmargin_x/2, lmargin_y/2, textSurface->w, textSurface->h};
+    //SDL_Rect textRect = {lmargin_x/2, lmargin_y/2, textSurface->w, textSurface->h};
 
-    lmargin_x += textSurface->w;
-    lmargin_y += textSurface->h;
+    //lmargin_x += textSurface->w;
+    //lmargin_y += textSurface->h;
 
-    SDL_Rect bgRect = {0, 0, lmargin_x, lmargin_y};
-    SDL_Surface* bgSurface = SDL_CreateSurface(bgRect.w, bgRect.h, textSurface->format);
+    //SDL_Rect bgRect = {0, 0, lmargin_x, lmargin_y};
+    //SDL_Surface* bgSurface = SDL_CreateSurface(bgRect.w, bgRect.h, textSurface->format);
 
-    SDL_FillSurfaceRect(bgSurface, &bgRect, SDL_MapRGBA(SDL_GetPixelFormatDetails(bgSurface->format), NULL, bgColor.r, bgColor.g, bgColor.b, bgColor.a));
-    SDL_BlitSurface(textSurface, NULL, bgSurface, &textRect);
+    //SDL_FillSurfaceRect(bgSurface, &bgRect, SDL_MapRGBA(SDL_GetPixelFormatDetails(bgSurface->format), NULL, bgColor.r, bgColor.g, bgColor.b, bgColor.a));
+    //SDL_BlitSurface(textSurface, NULL, bgSurface, &textRect);
 
-    SDL_Rect destRect = {offset_x-lmargin_x/2, offset_y-lmargin_y/2, lmargin_x, lmargin_y};
-    SDL_Surface* convertedImageSurface = SDL_ConvertSurface(imageSurface, bgSurface->format);
+    //SDL_Rect destRect = {offset_x-lmargin_x/2, offset_y-lmargin_y/2, lmargin_x, lmargin_y};
+    SDL_Surface* convertedImageSurface = SDL_ConvertSurface(imageSurface, SDL_PIXELFORMAT_RGBA8888);
     if (!convertedImageSurface){
       printf_s(xorstr_("Wallpaper image could not be converted to RGBA format! SDL_Error: %s\n"), SDL_GetError());
       TTF_Quit();
       SDL_Quit();
       return EXIT_FAILURE;
     }
-    SDL_BlitSurface(bgSurface, NULL, convertedImageSurface, &destRect);
+    for(auto &x : timers)
+      x->render(convertedImageSurface, font);
+
+    //SDL_BlitSurface(bgSurface, NULL, convertedImageSurface, &destRect);
 
     IMG_SaveJPG(convertedImageSurface, output_file.fp_s.c_str(), save_quality);
     SDL_DestroySurface(convertedImageSurface);
 
     FunctionHandlerL(!SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0, (LPVOID)output_file.fp_s.c_str(), SPIF_UPDATEINIFILE), "SDC", "Cannot set wallpaper path");
 
-    //printf_s(xorstr_("imageSurface: %x\n"), imageSurface->format);//13000801
-    SDL_DestroySurface(textSurface);
-    SDL_DestroySurface(bgSurface);
     if(!auto_change) break;
     else{
       SDL_DestroySurface(imageSurface);

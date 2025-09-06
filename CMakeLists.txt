@@ -72,4 +72,9 @@ if(WIN32)
       COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SDL3_ttf::SDL3_ttf-shared> $<TARGET_FILE_DIR:${PROJECT_NAME}>
       VERBATIM
   )
+  add_custom_command(
+      TARGET ${PROJECT_NAME} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy ${SRC}/sdc_config.json $<TARGET_FILE_DIR:${PROJECT_NAME}>
+      VERBATIM
+  )
 endif()

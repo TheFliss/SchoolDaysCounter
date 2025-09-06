@@ -1,0 +1,25 @@
+{
+  "background_run": false,
+  "timers": [
+    {
+      "text": "До лета осталось:",
+      "end_date": "2025-09-06 18:09:00",
+      "anchor": "top_left",
+      "offset": [50, 50],
+      "margin": [2, 2],
+      "detailed_time": true,
+      "text_color": "0xffffffff",
+      "bg_color": "0x000000b0"
+    },
+    {
+      "text": "До чего-нибудь осталось:",
+      "end_date": "2025-09-06 18:09:00",
+      "anchor": "left_middle",
+      "offset": [50, 30],
+      "margin": [2, 2],
+      "detailed_time": true,
+      "text_color": "0xffffffff",
+      "bg_color": "0x000000b0"
+    }
+  ]
+}
