@@ -349,10 +349,10 @@ int main(int argc, char const *argv[]) {
       day_acc += get_month_length(mi, st.wYear);
     }
 
-    int curr_seconds = 60-st.wSecond;
-    int curr_mins = 60-st.wMinute-1*(curr_seconds>0);
-    int curr_hours = 24-st.wHour-1*(curr_mins>0);
-    int curr_days = SchoolDays-day_acc-1*(curr_hours>0);
+    int curr_seconds = 59-st.wSecond;
+    int curr_mins = 59-st.wMinute;
+    int curr_hours = 23-st.wHour;
+    int curr_days = SchoolDays-day_acc-1;
 
     if(prev_secs == curr_seconds && prev_mins == curr_mins && prev_hours == curr_hours && prev_days == curr_days){
       //Sleep(update_time*100);
@@ -426,25 +426,33 @@ int main(int argc, char const *argv[]) {
     SDL_BlitSurface(textSurface, NULL, bgSurface, &textRect);
 
     SDL_Rect destRect = {offset_x-lmargin_x/2, offset_y-lmargin_y/2, lmargin_x, lmargin_y};
-    SDL_BlitSurface(bgSurface, NULL, imageSurface, &destRect);
-
-    IMG_SaveJPG(imageSurface, output_file.fp_s.c_str(), save_quality);
-
-    FunctionHandlerL(!SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0, (LPVOID)output_file.fp_s.c_str(), SPIF_UPDATEINIFILE), "SDC", "Cannot set wallpaper path");
-
-    SDL_DestroySurface(imageSurface);
-    SDL_DestroySurface(textSurface);
-    SDL_DestroySurface(bgSurface);
-
-    imageSurface = IMG_Load(origWallpaper.fp_s.c_str());
-    if (!imageSurface){
-      printf_s(xorstr_("Wallpaper image could not initialize! SDL_Error: %s\n"), SDL_GetError());
+    SDL_Surface* convertedImageSurface = SDL_ConvertSurface(imageSurface, bgSurface->format);
+    if (!convertedImageSurface){
+      printf_s(xorstr_("Wallpaper image could not be converted to RGBA format! SDL_Error: %s\n"), SDL_GetError());
       TTF_Quit();
       SDL_Quit();
       return EXIT_FAILURE;
     }
+    SDL_BlitSurface(bgSurface, NULL, convertedImageSurface, &destRect);
+
+    IMG_SaveJPG(convertedImageSurface, output_file.fp_s.c_str(), save_quality);
+    SDL_DestroySurface(convertedImageSurface);
+
+    FunctionHandlerL(!SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0, (LPVOID)output_file.fp_s.c_str(), SPIF_UPDATEINIFILE), "SDC", "Cannot set wallpaper path");
+
+    //printf_s(xorstr_("imageSurface: %x\n"), imageSurface->format);//13000801
+    SDL_DestroySurface(textSurface);
+    SDL_DestroySurface(bgSurface);
     if(!auto_change) break;
     else{
+      SDL_DestroySurface(imageSurface);
+      imageSurface = IMG_Load(origWallpaper.fp_s.c_str());
+      if (!imageSurface){
+        printf_s(xorstr_("Wallpaper image could not initialize! SDL_Error: %s\n"), SDL_GetError());
+        TTF_Quit();
+        SDL_Quit();
+        return EXIT_FAILURE;
+      }
       ::ShowWindow(::GetConsoleWindow(), SW_HIDE);
       Sleep(update_time);
     }

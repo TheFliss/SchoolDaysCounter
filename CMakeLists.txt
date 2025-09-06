@@ -20,10 +20,6 @@ find_package(SDL3 REQUIRED)
 find_package(SDL3_image REQUIRED)
 find_package(SDL3_ttf REQUIRED)
 
-include_directories(${SDL3_INCLUDE_DIRS})
-include_directories(${SDL3_image_INCLUDE_DIRS})
-include_directories(${SDL3_ttf_INCLUDE_DIRS})
-
 file(GLOB_RECURSE ${PROJECT_NAME}_All
   ${SRC}/src/*.cpp
   ${SRC}/src/*.c
