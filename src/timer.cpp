@@ -6,7 +6,7 @@ using namespace util;
 Timer::Timer(timer_t config) {
   istringstream ss(config.end_date);
   ss >> get_time(&tm_struct, "%Y-%m-%d %H:%M:%S");
-  tm_struct.tm_year += 1900;
+  tm_struct.tm_isdst = 0;
   if (ss.fail()) {
     cerr << "Date in config parsing failed!" << endl;
     exit(1);
@@ -66,6 +66,7 @@ Timer::Timer(timer_t config) {
     printf_s(xorstr_("anchor must be equal to one of (top_left, top_middle, top_right, left_middle, center, right_middle, bottom_left, bottom_middle, bottom_right)\n"));
     exit(1);
   }
+  detailed_time = config.detailed_time;
 
   text = config.text;
 }
@@ -85,137 +86,74 @@ void Timer::render(SDL_Surface * imageSurface) {
       exit(1);
     }
   }
+  #ifdef DEBUG
   cout << "rendered: " << ConvertWideToANSI(ConvertUtf8ToWide(text)) << endl;
-  //SYSTEMTIME st = {2025, 9, 1, 7, 0, 0, 0, 0};
-  SYSTEMTIME st;
-  GetLocalTime(&st);
+  #endif
+  time_t timestamp = time(&timestamp);
+  tm st = *localtime(&timestamp);
+  //cout << "timestamp: " << timestamp  << " : " << mktime(&tm_struct) << endl;
 
-  bool is_summer = st.wMonth > 5 && st.wMonth < 9;
+  string display_str = text + ' ';
+  if(timestamp <= mktime(&tm_struct)){
+    int wait_days = 0;
+    for (int i = st.tm_mon; i < 12*(tm_struct.tm_year-st.tm_year)+tm_struct.tm_mon; i++)
+    {
+      int mi = i%12+1;
+      int yi = i/12+st.tm_year+1900;
+      wait_days += get_month_length(mi, yi);
+    }
+    wait_days -= st.tm_mday;
+    wait_days += tm_struct.tm_mday;
 
-  DWORD SchoolDays = (!(st.wYear&0b11)+28)+31*5+30*3;
+    #ifdef DEBUG
+    cout << "Time (UTC): "
+              << "\nwYear " << tm_struct.tm_year
+              << "\nwMonth " << tm_struct.tm_mon
+              << "\nwDay " << tm_struct.tm_mday
+              << "\nwHour " << tm_struct.tm_hour
+              << "\nwMinute " << tm_struct.tm_min
+              << "\nwait_days " << wait_days
+              << endl;
+    #endif
 
-  int wait_days = 0;
-  //int d1_year = st.wYear;
-  //int d2_year = tm_struct.tm_year;
-  //int d1_mon = st.wMonth;
-  //int d2_mon = tm_struct.tm_mon+1;
-  //int d1_day = st.wDay;
-  //int d2_day = tm_struct.tm_mday;
-  //  while ((d1_year*366 + d1_mon*31 + d1_day) < (d2_year*366 + d2_mon*31 + d2_day))
-  //  {
-  //      wait_days++;
- 
-  //      if (++d1_day > get_month_length(d1_mon, d1_year)) {
-  //          d1_day = 1;
-  //          if (++d1_mon > 12) {
-  //              d1_mon = 1;
-  //              ++d1_year;
-  //          }
-  //      }
-  //  }
-  for (int i = st.wMonth-1; i < 12*(tm_struct.tm_year-st.wYear)+tm_struct.tm_mon; i++)
-  {
-    int mi = i%12+1;
-    int yi = i/12+st.wYear;
-    wait_days += get_month_length(mi, yi);
-    //if((mi == st.wMonth && yi == st.wYear) || (mi == tm_struct.tm_mon && yi == tm_struct.tm_year))
-    //  wait_days--;
-    cout << i << " " << mi << " " << get_month_length(mi, yi) << " " << yi << endl;
-    /* code */
-  }
-  wait_days -= st.wDay;
-  wait_days += tm_struct.tm_mday;
-  
-  //for (int i = 0; i < 12; i++) {
-  //  cout<< i<< endl;
-  //  if(i == tm_struct.tm_mon){
-  //    wait_days += tm_struct.tm_mday;
-  //    break;
-  //  }
-  //  wait_days += get_month_length(i, tm_struct.tm_year);
-  //}
-  //for (int i = st.wMonth; i <= 12; i++) {
-  //  cout<< i<< endl;
-  //  if(i == st.wMonth){
-  //    wait_days -= st.wDay;
-  //  }
-  //  wait_days += get_month_length(i, st.wYear);
-  //}
-  //for (int i = st.wYear+1; i < tm_struct.tm_year; i++)
-  //  wait_days += 365+!(i&0b11);
-
-  cout << "Time (UTC): "
-            << "\nisLeapYear " << (!(tm_struct.tm_year&0b11))
-            << "\nwYear " << tm_struct.tm_year
-            << "\nwMonth " << tm_struct.tm_mon
-            << "\nwDay " << tm_struct.tm_mday
-            << "\nwHour " << tm_struct.tm_hour
-            << "\nwMinute " << tm_struct.tm_min
-            << "\nSchoolDays " << SchoolDays
-            << "\nwait_days " << wait_days
-            << endl;
-
-  //int day_acc = 0;
-  //for (int i = 0; i < 9; i++) {
-  //  int mi = i+(i > 3 ? -3 : 9);
-  //  if(mi == st.wMonth){
-  //    day_acc += st.wDay;
-  //    break;
-  //  }
-  //  day_acc += get_month_length(mi, st.wYear);
-  //}
-
-  int curr_seconds = tm_struct.tm_sec-st.wSecond;
-  curr_seconds += 60*(curr_seconds < 0);
-  int curr_mins = tm_struct.tm_min-st.wMinute;
-  curr_mins += 60*(curr_mins < 0);
-  int curr_hours = tm_struct.tm_hour-st.wHour;
-  curr_hours += 24*(curr_hours < 0);
-  int curr_days = wait_days;//SchoolDays-day_acc-1;
-
-  char display_text[250];
-  if(detailed_time){
-    sprintf_s(display_text, xorstr_("%s %d %s, %d %s, %d %s и %d %s!"),
-      text.c_str(),
-      curr_days,
-      declination_word(curr_days, xorstr_("день"), xorstr_("дня"), xorstr_("дней")),
-      curr_hours,
-      declination_word(curr_hours, xorstr_("час"), xorstr_("часа"), xorstr_("часов")),
-      curr_mins,
-      declination_word(curr_mins, xorstr_("минута"), xorstr_("минуты"), xorstr_("минут")),
-      curr_seconds,
-      declination_word(curr_seconds, xorstr_("секунда"), xorstr_("секунды"), xorstr_("секунд"))
-    );
+    int curr_seconds = tm_struct.tm_sec-st.tm_sec;
+    int curr_mins = tm_struct.tm_min-st.tm_min;
+    int curr_hours = tm_struct.tm_hour-st.tm_hour;
+    int curr_days = wait_days-1*(curr_hours < 0);
+    curr_hours += 24*(curr_hours < 0)-1*(curr_mins < 0);
+    curr_mins += 60*(curr_mins < 0)-1*(curr_seconds < 0);
+    curr_seconds += 60*(curr_seconds < 0);
+    if(curr_days > 0)
+      display_str += to_string(curr_days) + ' ' + declination_word(curr_days, xorstr_("день"), xorstr_("дня"), xorstr_("дней")) + (detailed_time ? ", " : " и ");
+    if(curr_hours > 0 || curr_days > 0)
+      display_str += to_string(curr_hours) + ' ' + declination_word(curr_hours, xorstr_("час"), xorstr_("часа"), xorstr_("часов"));
+    if(detailed_time){
+      if(curr_hours > 0 || curr_days > 0)
+        display_str += ", ";
+      if(curr_mins > 0 || curr_days > 0 || curr_days > 0)
+        display_str += to_string(curr_mins) + ' ' + declination_word(curr_mins, xorstr_("минута"), xorstr_("минуты"), xorstr_("минут")) + " и ";
+      display_str += to_string(curr_seconds) + ' ' + declination_word(curr_seconds, xorstr_("секунда"), xorstr_("секунды"), xorstr_("секунд"));
+    }
   }else
-  {
-    sprintf_s(display_text, xorstr_("%s %d %s и %d %s!"),
-      text.c_str(),
-      curr_days,
-      declination_word(curr_days, xorstr_("день"), xorstr_("дня"), xorstr_("дней")),
-      curr_hours,
-      declination_word(curr_hours, xorstr_("час"), xorstr_("часа"), xorstr_("часов"))
-    );
-  }
+    display_str += "0 секунд";
 
-  //#ifdef DEBUG
+  #ifdef DEBUG
 
-  DWORD cMonthDays = get_month_length(st.wMonth, st.wYear);
+  DWORD cMonthDays = get_month_length(st.tm_mon, st.tm_year);
   cout << "Time (UTC): "
-            << "\nisLeapYear " << isLeapYear(st.wYear)
-            << "\nwYear " << st.wYear
-            << "\nwMonth " << st.wMonth
-            << "\nwDay " << st.wDay
-            << "\nwHour " << st.wHour
-            << "\nwMinute " << st.wMinute
-            << "\nSchoolDays " << SchoolDays
+            << "\nisLeapYear " << isLeapYear(st.tm_year)
+            << "\nwYear " << st.tm_year
+            << "\nwMonth " << st.tm_mon
+            << "\nwDay " << st.tm_mday
+            << "\nwHour " << st.tm_hour
+            << "\nwMinute " << st.tm_min
             << "\ncMonthDays " << cMonthDays
-            << "\nis_summer " << is_summer
             << "\nday_acc " << wait_days
             << endl;
-  //#endif
+  #endif
 
   // Render text to a surface
-  SDL_Surface* textSurface = TTF_RenderText_Blended(font, display_text, strlen(display_text), textColor);
+  SDL_Surface* textSurface = TTF_RenderText_Blended(font, display_str.c_str(), display_str.length(), textColor);
   if (!textSurface){
     printf_s(xorstr_("Text surface could not initialize! SDL_Error: %s\n"), SDL_GetError());
     TTF_Quit();
