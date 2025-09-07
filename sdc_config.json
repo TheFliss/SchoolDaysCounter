@@ -1,5 +1,7 @@
 {
-  "background_run": false,
+  "update_delay": 1000.0,
+  "save_quality": 100,
+  "background_run": true,
   "timers": [
     {
       "text": "До лета осталось:",

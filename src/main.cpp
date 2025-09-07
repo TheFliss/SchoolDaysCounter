@@ -45,89 +45,17 @@ int main(int argc, char const *argv[]) {
   setlocale(LC_ALL, "Russian");
   SetConsoleOutputCP(866);
 
-  //cout << (getexepath()) << endl;
-
-
-  bool get_wallpaper = false;
   bool restore = false;
-  bool highp = false;
-  bool auto_change = false;
-  int update_time = 60000;
-  int font_size = 6;
-  int offset_x = 50;
-  int offset_y = 50;
-  int margin_x = 1;
-  int margin_y = 1;
-  int save_quality = 100;
-  SDL_Color textColor = {255, 255, 255, 255};
-  SDL_Color bgColor = {0, 0, 0, 240};
   FilePath SDCConfigFile = FilePath(getexepath() / "sdc_config.json");
 
   for (int i = 1; i < argc; i++) {
     try
     {
-      if(strcmp(argv[i], xorstr_("-update-time")) == 0){
-        test_arg(i, argc, argv[i]);
-        update_time = stoi(argv[i+1]);
-        i++;
-      }else 
-      if(strcmp(argv[i], xorstr_("-set-save-quality")) == 0){
-        test_arg(i, argc, argv[i]);
-        save_quality = stoi(argv[i+1]);
-        i++;
-      }else 
-      if(strcmp(argv[i], xorstr_("-set-font-size")) == 0){
-        test_arg(i, argc, argv[i]);
-        font_size = stoi(argv[i+1]);
-        i++;
-      }else 
-      if(strcmp(argv[i], xorstr_("-set-margin-x")) == 0){
-        test_arg(i, argc, argv[i]);
-        margin_x = stoi(argv[i+1]);
-        i++;
-      }else 
-      if(strcmp(argv[i], xorstr_("-set-margin-y")) == 0){
-        test_arg(i, argc, argv[i]);
-        margin_y = stoi(argv[i+1]);
-        i++;
-      }else 
-      if(strcmp(argv[i], xorstr_("-set-offset-x")) == 0){
-        test_arg(i, argc, argv[i]);
-        offset_x = stoi(argv[i+1]);
-        i++;
-      }else 
-      if(strcmp(argv[i], xorstr_("-set-offset-y")) == 0){
-        test_arg(i, argc, argv[i]);
-        offset_y = stoi(argv[i+1]);
-        i++;
-      }else 
       if(strcmp(argv[i], xorstr_("-config-path")) == 0){
         test_arg(i, argc, argv[i]);
         SDCConfigFile = FilePath(string(argv[i+1]));
         i++;
       }else 
-      if(strcmp(argv[i], xorstr_("-set-text-color")) == 0){
-        test_arg(i, argc, argv[i]);
-        uint32_t hex_color = byteswap((uint32_t)stoul(argv[i+1], nullptr, 16));
-        textColor = *(SDL_Color *)&hex_color;
-        i++;
-      }else 
-      if(strcmp(argv[i], xorstr_("-set-bg-color")) == 0){
-        test_arg(i, argc, argv[i]);
-        uint32_t hex_color = byteswap((uint32_t)stoul(argv[i+1], nullptr, 16));
-        bgColor = *(SDL_Color *)&hex_color;
-        //cout << hex << (int)bgColor.r << " " << (int)bgColor.g << " " << (int)bgColor.b << " " << (int)bgColor.a << " " << endl;
-        i++;
-      }else 
-      if(strcmp(argv[i], xorstr_("-high-precision")) == 0){
-        highp = true;
-      }else 
-      if(strcmp(argv[i], xorstr_("-enable-auto-change")) == 0){
-        auto_change = true;
-      }else 
-      if(strcmp(argv[i], xorstr_("-get-wallpaper")) == 0 || strcmp(argv[i], xorstr_("-gw")) == 0){
-        get_wallpaper = true;
-      }else
       if(strcmp(argv[i], xorstr_("-restore")) == 0 || strcmp(argv[i], xorstr_("-r")) == 0){
         restore = true;
       }else{
@@ -226,12 +154,6 @@ int main(int argc, char const *argv[]) {
     return 0;
   }
 
-  if(update_time < 1){
-    printf_s(xorstr_("\nERROR: Update time must be greater than 0\n"));
-    usage(argv[0]);
-    return EXIT_FAILURE;
-  }
-
   // Initialize SDL stuff
   if (!SDL_Init(0)) {
       printf_s(xorstr_("SDL could not initialize! SDL_Error: %s\n"), SDL_GetError());
@@ -295,11 +217,10 @@ int main(int argc, char const *argv[]) {
     return EXIT_FAILURE;
   }
 
-  offset_x *= imageSurface->w/100;
-  offset_y *= imageSurface->h/100;
-
   vector<unique_ptr<Timer>> timers;
 
+  struct_mapping::reg(&sdc_config_t::update_delay, "update_delay");
+  struct_mapping::reg(&sdc_config_t::save_quality, "save_quality");
   struct_mapping::reg(&sdc_config_t::background_run, "background_run");
   struct_mapping::reg(&sdc_config_t::timers, "timers");
   struct_mapping::reg(&timer_t::text, "text");
@@ -316,12 +237,21 @@ int main(int argc, char const *argv[]) {
   auto sdccstream = ifstream(SDCConfigFile.fp);
   struct_mapping::map_json_to_struct(sdc_config, sdccstream);
 
+  if(sdc_config.update_delay < 1){
+    printf_s(xorstr_("\nERROR: Update time must be greater than 0\n"));
+    usage(argv[0]);
+    return EXIT_FAILURE;
+  }
+
   {
     for(auto &x : sdc_config.timers){
       Timer current_timer(x);
       timers.push_back(make_unique<Timer>(current_timer));
     }
   }
+
+  if(!sdc_config.background_run)
+    ShowWindow(GetConsoleWindow(), SW_HIDE);
 
   while(1){
     SDL_Surface* convertedImageSurface = SDL_ConvertSurface(imageSurface, SDL_PIXELFORMAT_RGBA8888);
@@ -334,12 +264,12 @@ int main(int argc, char const *argv[]) {
     for(auto &x : timers)
       x->render(convertedImageSurface);
 
-    IMG_SaveJPG(convertedImageSurface, output_file.fp_s.c_str(), save_quality);
+    IMG_SaveJPG(convertedImageSurface, output_file.fp_s.c_str(), (int)sdc_config.save_quality);
     SDL_DestroySurface(convertedImageSurface);
 
     FunctionHandlerL(!SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0, (LPVOID)output_file.fp_s.c_str(), SPIF_UPDATEINIFILE), "SDC", "Cannot set wallpaper path");
 
-    if(!auto_change) break;
+    if(!sdc_config.background_run) break;
     else{
       SDL_DestroySurface(imageSurface);
       imageSurface = IMG_Load(origWallpaper.fp_s.c_str());
@@ -349,8 +279,7 @@ int main(int argc, char const *argv[]) {
         SDL_Quit();
         return EXIT_FAILURE;
       }
-      ::ShowWindow(::GetConsoleWindow(), SW_HIDE);
-      Sleep(update_time);
+      Sleep(sdc_config.update_delay);
     }
   }
   SDL_DestroySurface(imageSurface);

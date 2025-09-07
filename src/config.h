@@ -20,6 +20,8 @@ struct timer_t {
 };
 
 struct sdc_config_t {
+  float update_delay;
+  float save_quality;
   bool background_run;
   vector<timer_t> timers;
 };
