@@ -17,13 +17,13 @@ void DisplayError(LPCTSTR desc);
 #define PROTECT_ERROR_LOG(x) printf(xorstr_(x))
 #endif
 
-#define ResetTextAttrib SetConsoleTextAttribute(hConsoleOutput, consoleScreenInfo->wAttributes)
+#define ResetTextAttrib SetConsoleTextAttribute(hConsoleOutput, consoleScreenInfo.wAttributes)
 
 #define FunctionHandler(cond, desc) if (cond) {\
   HANDLE hConsoleOutput;\
-  PCONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = new CONSOLE_SCREEN_BUFFER_INFO{0};\
+  CONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = CONSOLE_SCREEN_BUFFER_INFO{0};\
   hConsoleOutput = GetStdHandle(STD_OUTPUT_HANDLE);\
-  GetConsoleScreenBufferInfo(hConsoleOutput, consoleScreenInfo);\
+  GetConsoleScreenBufferInfo(hConsoleOutput, &consoleScreenInfo);\
   SetConsoleTextAttribute(hConsoleOutput, ConsoleForeground::DARKRED); \
   PROTECT_ERROR_LOG("\n[SDC] error: ");\
   ResetTextAttrib;\
@@ -33,9 +33,9 @@ void DisplayError(LPCTSTR desc);
 
 #define FunctionHandlerD(cond, desc, file) if (cond) {\
   HANDLE hConsoleOutput;\
-  PCONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = new CONSOLE_SCREEN_BUFFER_INFO{0};\
+  CONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = CONSOLE_SCREEN_BUFFER_INFO{0};\
   hConsoleOutput = GetStdHandle(STD_OUTPUT_HANDLE);\
-  GetConsoleScreenBufferInfo(hConsoleOutput, consoleScreenInfo);\
+  GetConsoleScreenBufferInfo(hConsoleOutput, &consoleScreenInfo);\
   SetConsoleTextAttribute(hConsoleOutput, ConsoleForeground::DARKRED); \
   PROTECT_ERROR_LOG("\n[SDC] error: ");\
   ResetTextAttrib;\
@@ -46,9 +46,9 @@ void DisplayError(LPCTSTR desc);
 
 #define FunctionHandlerWD(cond, desc, file) if (cond) {\
   HANDLE hConsoleOutput;\
-  PCONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = new CONSOLE_SCREEN_BUFFER_INFO{0};\
+  CONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = CONSOLE_SCREEN_BUFFER_INFO{0};\
   hConsoleOutput = GetStdHandle(STD_OUTPUT_HANDLE);\
-  GetConsoleScreenBufferInfo(hConsoleOutput, consoleScreenInfo);\
+  GetConsoleScreenBufferInfo(hConsoleOutput, &consoleScreenInfo);\
   SetConsoleTextAttribute(hConsoleOutput, ConsoleForeground::DARKRED); \
   PROTECT_ERROR_LOG("\n[SDC] error: ");\
   ResetTextAttrib;\
@@ -59,9 +59,9 @@ void DisplayError(LPCTSTR desc);
 
 #define FunctionHandlerL(cond, from, desc) if (cond) {\
   HANDLE hConsoleOutput;\
-  PCONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = new CONSOLE_SCREEN_BUFFER_INFO{0};\
+  CONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = CONSOLE_SCREEN_BUFFER_INFO{0};\
   hConsoleOutput = GetStdHandle(STD_OUTPUT_HANDLE);\
-  GetConsoleScreenBufferInfo(hConsoleOutput, consoleScreenInfo);\
+  GetConsoleScreenBufferInfo(hConsoleOutput, &consoleScreenInfo);\
   SetConsoleTextAttribute(hConsoleOutput, ConsoleForeground::DARKRED); \
   PROTECT_ERROR_LOG("\n["##from##"] error: ");\
   ResetTextAttrib;\
@@ -71,9 +71,9 @@ void DisplayError(LPCTSTR desc);
 
 #define FunctionHandlerWarnL(cond, from, desc) if (cond) {\
   HANDLE hConsoleOutput;\
-  PCONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = new CONSOLE_SCREEN_BUFFER_INFO{0};\
+  CONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo = CONSOLE_SCREEN_BUFFER_INFO{0};\
   hConsoleOutput = GetStdHandle(STD_OUTPUT_HANDLE);\
-  GetConsoleScreenBufferInfo(hConsoleOutput, consoleScreenInfo);\
+  GetConsoleScreenBufferInfo(hConsoleOutput, &consoleScreenInfo);\
   SetConsoleTextAttribute(hConsoleOutput, ConsoleForeground::DARKYELLOW); \
   PROTECT_ERROR_LOG("\n["##from##"] warning: ");\
   ResetTextAttrib;\
