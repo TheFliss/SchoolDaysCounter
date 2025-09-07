@@ -7,9 +7,12 @@ fs::path util::getexepath()
   return fs::path(path).parent_path();
 }
 
-int util::get_month_length(int month, int year){
-  DWORD cMonthDays = month-((month > 8) ? 9 : 1);
-  return (month==2) ? 28+!(year&0b11) : (cMonthDays&1 ? 30 : 31);
+bool util::isLeapYear(int year) {
+  return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+}
+
+int util::get_month_length(int month, int year) {
+  return unsigned{(std::chrono::last/month/year).day()};
 }
 
 const char * util::declination_word(int counter, const char* d0, const char* d1, const char* d2){

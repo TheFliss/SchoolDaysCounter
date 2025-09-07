@@ -11,6 +11,7 @@ struct timer_t {
   string text;
   string end_date;
   string anchor;
+  float font_size;
   vector<float> offset;
   vector<float> margin;
   bool detailed_time;

@@ -14,9 +14,12 @@ private:
   config_vec2_t margin;
   bool detailed_time;
   string text;
+  float font_size;
+  uint8_t anchor;
+  TTF_Font* font{};
 public:
   Timer(timer_t _config);
-  void render(SDL_Surface * imageSurface, TTF_Font* font);
+  void render(SDL_Surface * imageSurface);
   ~Timer();
 };
 
