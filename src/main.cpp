@@ -9,22 +9,10 @@ using namespace util;
 static void usage(const char *prog){
 
   vector<string> message{
-    xorstr_("The following is required:"),
-    "",
+    //xorstr_("The following is required:"),
+    //"",
     xorstr_("Optional arguments:"),
     xorstr_("\t-config-path                  ()"),
-    xorstr_("\t-enable-auto-change           ()"),
-    xorstr_("\t-update-time                  ( in miliseconds, default 60000)"),
-    xorstr_("\t-set-save-quality             (sets output image quality (JPG format) [0; 33] is Lowest quality, [34; 66] is Middle quality, [67; 100] is Highest quality.)"),
-    xorstr_("\t-set-font-size                (sets counter font size in image height percnetage, dafault 6)"),
-    xorstr_("\t-set-offset-x                 (sets X offset of counter in image width percnetage, dafault 50)"),
-    xorstr_("\t-set-offset-y                 (sets Y offset of counter in image height percnetage, dafault 50)"),
-    xorstr_("\t-set-margin-x                 (sets X margin of background in image width percnetage, dafault 1)"),
-    xorstr_("\t-set-margin-y                 (sets Y margin of background in image height percnetage, dafault 1)"),
-    xorstr_("\t-set-text-color               (sets text color in hex format RGBA, default #FFFFFFFF)"),
-    xorstr_("\t-set-bg-color                 (sets background color in hex format RGBA, default #000000C0)"),
-    xorstr_("\t-high-precision               ()"),
-    xorstr_("\t-get-wallpaper -gw            (gets desktop wallpaper)"),
     xorstr_("\t-restore -r                   (sets the original wallpaper)"),
     "",
   };
