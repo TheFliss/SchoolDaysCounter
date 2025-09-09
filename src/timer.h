@@ -7,19 +7,10 @@
 class Timer
 {
 private:
-  tm tm_struct{};
-  SDL_Color textColor = {255, 255, 255, 255};
-  SDL_Color bgColor = {0, 0, 0, 240};
-  config_vec2_t offset;
-  config_vec2_t margin;
-  bool detailed_time;
-  string text;
-  float font_size;
-  uint8_t anchor;
-  TTF_Font* font{};
+  timer_t cfg;
 public:
-  Timer(timer_t _config);
-  void render(SDL_Surface * imageSurface);
+  Timer(timer_t &_config);
+  void render(HDC hdc, RECT *cr);
   ~Timer();
 };
 

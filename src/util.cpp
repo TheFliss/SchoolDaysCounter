@@ -7,14 +7,6 @@ fs::path util::getexepath()
   return fs::path(path).parent_path();
 }
 
-bool util::isLeapYear(int year) {
-  return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-}
-
-int util::get_month_length(int month, int year) {
-  return unsigned{(std::chrono::last/month/year).day()};
-}
-
 const char * util::declination_word(int counter, const char* d0, const char* d1, const char* d2){
   int cTens = counter%10;
   return ((counter%100-cTens) != 10) ? ((cTens > 1 && cTens < 5) ? d1 : ((cTens == 1) ? d0 : d2)) : d2;

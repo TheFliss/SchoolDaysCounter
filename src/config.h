@@ -9,20 +9,19 @@ struct config_vec2_t {
 
 struct timer_t {
   string text;
-  string end_date;
-  string anchor;
+  time_t end_date;
+  uint8_t anchor;
   float font_size;
-  vector<float> offset;
-  vector<float> margin;
+  config_vec2_t offset;
+  config_vec2_t margin;
+  config_vec2_t fixed_size;
   bool detailed_time;
-  string text_color;
-  string bg_color;
+  uint32_t text_color;
+  uint32_t bg_color;
 };
 
 struct sdc_config_t {
-  float update_delay;
-  float save_quality;
-  bool background_run;
+  int update_delay;
   vector<timer_t> timers;
 };
 

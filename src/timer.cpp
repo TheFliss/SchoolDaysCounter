@@ -2,232 +2,213 @@
 #include "util.h"
 
 using namespace util;
+using namespace chrono;
+struct date_time_t
+{
+  int d;
+  int h;
+  int m;
+  int s;
+};
 
-Timer::Timer(timer_t config) {
-  istringstream ss(config.end_date);
-  ss >> get_time(&tm_struct, "%Y-%m-%d %H:%M:%S");
-  tm_struct.tm_isdst = 0;
-  if (ss.fail()) {
-    cerr << "Date in config parsing failed!" << endl;
-    exit(1);
+std::ostream&
+operator<<(std::ostream& os, const RECT& x)
+{
+  os << x.left << " left "
+      << x.top << " top "
+      << x.right << " right "
+      << x.bottom << " bottom";
+  return os;
+}
+#ifdef DEBUG
+std::ostream&
+operator<<(std::ostream& os, const date_time_t& x)
+{
+  os << x.d << " days "
+      << x.h << " hours "
+      << x.m << " minutes "
+      << x.s << " seconds";
+  return os;
+}
+#endif
+
+using second_point = std::chrono::time_point<std::chrono::system_clock, std::chrono::seconds>;
+
+template <class Rep, class Period>
+inline hh_mm_ss<std::chrono::duration<Rep, Period>> make_time(const std::chrono::duration<Rep, Period>& d) {
+  return hh_mm_ss<std::chrono::duration<Rep, Period>>(d);
+}
+
+date_time_t time_diff(second_point t1, second_point t0) {
+  auto dp0 = floor<days>(t0);
+  auto dp1 = floor<days>(t1);
+  year_month_day ymd0 = dp0;
+  year_month_day ymd1 = dp1;
+  auto time0 = t0 - dp0;
+  auto time1 = t1 - dp1;
+  auto dd = dp1 - dp0;
+  dp0 += dd;
+  if (dp0 + time0 > t1) {
+    --dd;
+    dp0 -= days{1};
   }
-  //else {
-  //  char buf[32];
-  //  strftime(buf, 32, "%Y-%m-%d %H:%M:%S", &tm_struct);
-  //  cout << "Parsed date: " << buf << endl;
-  //}
+  auto delta_time = time1 - time0;
+  if (time0 > time1)
+    delta_time += days{1};
+  auto dt = make_time(delta_time);
+  return {dd.count(), dt.hours().count(), dt.minutes().count(), (int)dt.seconds().count()};
+}
 
-  try {
-    uint32_t hex_color = byteswap((uint32_t)stoul(config.text_color, nullptr, 16));
-    textColor = *(SDL_Color *)&hex_color;
-    hex_color = byteswap((uint32_t)stoul(config.bg_color, nullptr, 16));
-    bgColor = *(SDL_Color *)&hex_color;
-  }
-  catch(const exception& e)
-  {
-    cerr << "\nException caught while parsing \"bgColor\" or \"textColor\" in timer config: " << e.what() << endl;
-    exit(1);
-  }
-  font_size = config.font_size;
-
-  if(config.margin.size() != 2)
-  {
-    printf_s(xorstr_("Margin must be equal to 2\n"));
-    exit(1);
-  }else
-    margin = {config.margin[0], config.margin[1]};
-
-  if(config.offset.size() != 2)
-  {
-    printf_s(xorstr_("Offset must be equal to 2\n"));
-    exit(1);
-  }else
-    offset = {config.offset[0], config.offset[1]};
-  
-  if(config.anchor == "top_left"){
-    anchor = 0;
-  }else if(config.anchor == "top_middle"){
-    anchor = 1;
-  }else if(config.anchor == "top_right"){
-    anchor = 2;
-  }else if(config.anchor == "left_middle"){
-    anchor = 3;
-  }else if(config.anchor == "center"){
-    anchor = 4;
-  }else if(config.anchor == "right_middle"){
-    anchor = 5;
-  }else if(config.anchor == "bottom_left"){
-    anchor = 6;
-  }else if(config.anchor == "bottom_middle"){
-    anchor = 7;
-  }else if(config.anchor == "bottom_right"){
-    anchor = 8;
-  }else{
-    printf_s(xorstr_("anchor must be equal to one of (top_left, top_middle, top_right, left_middle, center, right_middle, bottom_left, bottom_middle, bottom_right)\n"));
-    exit(1);
-  }
-  detailed_time = config.detailed_time;
-
-  text = config.text;
+Timer::Timer(timer_t &_config) {
+  cfg = _config;
 }
 
 Timer::~Timer() {
-  if(!font)
-    TTF_CloseFont(font);
 }
 
-void Timer::render(SDL_Surface * imageSurface) {
-  if(!font){
-    font = TTF_OpenFont(xorstr_("C:/Windows/Fonts/calibri.ttf"), (int)(font_size*imageSurface->h/100.0f));
-    if (!font){
-      printf_s(xorstr_("Font could not initialize! SDL_Error: %s\n"), SDL_GetError());
-      TTF_Quit();
-      SDL_Quit();
-      exit(1);
-    }
-  }
+void Timer::render(HDC hdc, RECT *cr) {
+
+  SetBkMode(hdc, TRANSPARENT);
+
+  HFONT hFont = CreateFont(
+    (int)(cfg.font_size*cr->bottom/100.0f), 0, 0, 0, FW_NORMAL, 
+    FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+    OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+    DEFAULT_QUALITY, DEFAULT_PITCH, L"Calibri"
+  );
+
+  HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+
+  SetTextColor(hdc, RGB(255, 255, 255));
+
   #ifdef DEBUG
   cout << "rendered: " << ConvertWideToANSI(ConvertUtf8ToWide(text)) << endl;
   #endif
-  time_t timestamp = time(&timestamp);
-  tm st = *localtime(&timestamp);
-  //cout << "timestamp: " << timestamp  << " : " << mktime(&tm_struct) << endl;
+  time_t timestamp_now = time(&timestamp_now);
+  tm st = *localtime(&timestamp_now);
 
-  string display_str = text + ' ';
-  if(timestamp <= mktime(&tm_struct)){
-    int wait_days = 0;
-    for (int i = st.tm_mon; i < 12*(tm_struct.tm_year-st.tm_year)+tm_struct.tm_mon; i++)
-    {
-      int mi = i%12+1;
-      int yi = i/12+st.tm_year+1900;
-      wait_days += get_month_length(mi, yi);
-    }
-    wait_days -= st.tm_mday;
-    wait_days += tm_struct.tm_mday;
+  string display_str = cfg.text + ' ';
+  if(timestamp_now <= cfg.end_date){
+    date_time_t tdiff = time_diff(second_point{seconds(cfg.end_date)}, second_point{seconds(timestamp_now)});
+    if(tdiff.d > 0)
+      display_str += to_string(tdiff.d) + ' ' + declination_word(tdiff.d, xorstr_("день"), xorstr_("дня"), xorstr_("дней")) + (cfg.detailed_time ? ", " : " и ");
 
-    #ifdef DEBUG
-    cout << "Time (UTC): "
-              << "\nwYear " << tm_struct.tm_year
-              << "\nwMonth " << tm_struct.tm_mon
-              << "\nwDay " << tm_struct.tm_mday
-              << "\nwHour " << tm_struct.tm_hour
-              << "\nwMinute " << tm_struct.tm_min
-              << "\nwait_days " << wait_days
-              << endl;
-    #endif
+    if(tdiff.d > 0 || tdiff.d > 0)
+      display_str += to_string(tdiff.d) + ' ' + declination_word(tdiff.d, xorstr_("час"), xorstr_("часа"), xorstr_("часов"));
 
-    int curr_seconds = tm_struct.tm_sec-st.tm_sec;
-    int curr_mins = tm_struct.tm_min-st.tm_min;
-    int curr_hours = tm_struct.tm_hour-st.tm_hour;
-    int curr_days = wait_days-1*(curr_hours < 0);
-    curr_hours += 24*(curr_hours < 0)-1*(curr_mins < 0);
-    curr_mins += 60*(curr_mins < 0)-1*(curr_seconds < 0);
-    curr_seconds += 60*(curr_seconds < 0);
-    if(curr_days > 0)
-      display_str += to_string(curr_days) + ' ' + declination_word(curr_days, xorstr_("день"), xorstr_("дня"), xorstr_("дней")) + (detailed_time ? ", " : " и ");
-    if(curr_hours > 0 || curr_days > 0)
-      display_str += to_string(curr_hours) + ' ' + declination_word(curr_hours, xorstr_("час"), xorstr_("часа"), xorstr_("часов"));
-    if(detailed_time){
-      if(curr_hours > 0 || curr_days > 0)
+    if(cfg.detailed_time){
+      if(tdiff.d > 0 || tdiff.d > 0)
         display_str += ", ";
-      if(curr_mins > 0 || curr_days > 0 || curr_days > 0)
-        display_str += to_string(curr_mins) + ' ' + declination_word(curr_mins, xorstr_("минута"), xorstr_("минуты"), xorstr_("минут")) + " и ";
-      display_str += to_string(curr_seconds) + ' ' + declination_word(curr_seconds, xorstr_("секунда"), xorstr_("секунды"), xorstr_("секунд"));
+
+      if(tdiff.m > 0 || tdiff.d > 0 || tdiff.d > 0)
+        display_str += to_string(tdiff.m) + ' ' + declination_word(tdiff.m, xorstr_("минута"), xorstr_("минуты"), xorstr_("минут")) + " и ";
+
+      display_str += to_string(tdiff.s) + ' ' + declination_word(tdiff.s, xorstr_("секунда"), xorstr_("секунды"), xorstr_("секунд"));
     }
   }else
     display_str += "0 секунд";
+  RECT textRect{};
+  DrawText(hdc, ConvertUtf8ToWide(display_str).c_str(), -1, &textRect, DT_CALCRECT);
 
-  #ifdef DEBUG
+  int textWidth = textRect.right - textRect.left;
+  int textHeight = textRect.bottom - textRect.top;
 
-  DWORD cMonthDays = get_month_length(st.tm_mon, st.tm_year);
-  cout << "Time (UTC): "
-            << "\nisLeapYear " << isLeapYear(st.tm_year)
-            << "\nwYear " << st.tm_year
-            << "\nwMonth " << st.tm_mon
-            << "\nwDay " << st.tm_mday
-            << "\nwHour " << st.tm_hour
-            << "\nwMinute " << st.tm_min
-            << "\ncMonthDays " << cMonthDays
-            << "\nday_acc " << wait_days
-            << endl;
-  #endif
+  int xPos = (int)(cfg.offset.x*cr->right/100.0f);
 
-  // Render text to a surface
-  SDL_Surface* textSurface = TTF_RenderText_Blended(font, display_str.c_str(), display_str.length(), textColor);
-  if (!textSurface){
-    printf_s(xorstr_("Text surface could not initialize! SDL_Error: %s\n"), SDL_GetError());
-    TTF_Quit();
-    SDL_Quit();
-    exit(1);
+  int lmargin_x;
+  if(cfg.fixed_size.x < 0){
+    lmargin_x = (int)(cfg.margin.x*cr->right/100.0f)+textWidth;
+  }else{
+    lmargin_x = (int)(cfg.fixed_size.x);
   }
-  int lmargin_x = (int)(margin.x*imageSurface->w/100);
-  int lmargin_y = (int)(margin.y*imageSurface->h/100);
 
-  SDL_Rect textRect = {lmargin_x/2, lmargin_y/2, textSurface->w, textSurface->h};
-
-  lmargin_x += textSurface->w;
-  lmargin_y += textSurface->h;
-
-  SDL_Rect bgRect = {0, 0, lmargin_x, lmargin_y};
-  SDL_Surface* bgSurface = SDL_CreateSurface(bgRect.w, bgRect.h, textSurface->format);
-
-  SDL_FillSurfaceRect(bgSurface, &bgRect, SDL_MapRGBA(SDL_GetPixelFormatDetails(bgSurface->format), NULL, bgColor.r, bgColor.g, bgColor.b, bgColor.a));
-  SDL_BlitSurface(textSurface, NULL, bgSurface, &textRect);
-
-  SDL_Rect destRect = {0, 0, lmargin_x, lmargin_y};
-
-  switch (anchor)
+  switch (cfg.anchor)
   {
-    case 0:{
-      destRect.x = (int)(offset.x*imageSurface->w/100.0f);
-      destRect.y = (int)(offset.y*imageSurface->h/100.0f);
+    case 1:
+    case 4:
+    case 7:
+      xPos += (int)(cr->right/2.0f);
       break;
-    }
-    case 1:{
-      destRect.x = (int)(offset.x*imageSurface->w/100.0f-lmargin_x/2.0f+imageSurface->w/2.0f);
-      destRect.y = (int)(offset.y*imageSurface->h/100.0f);
+    case 2:
+    case 5:
+    case 8:
+      xPos += cr->right-lmargin_x/2;
       break;
-    }
-    case 2:{
-      destRect.x = (int)(offset.x*imageSurface->w/100.0f-lmargin_x+imageSurface->w);
-      destRect.y = (int)(offset.y*imageSurface->h/100.0f);
-      break;
-    }
-    case 3:{
-      destRect.x = (int)(offset.x*imageSurface->w/100.0f);
-      destRect.y = (int)(offset.y*imageSurface->h/100.0f-lmargin_y/2.0f+imageSurface->h/2.0f);
-      break;
-    }
-    case 4:{
-      destRect.x = (int)(offset.x*imageSurface->w/100.0f-lmargin_x/2.0f+imageSurface->w/2.0f);
-      destRect.y = (int)(offset.y*imageSurface->h/100.0f-lmargin_y/2.0f+imageSurface->h/2.0f);
-      break;
-    }
-    case 5:{
-      destRect.x = (int)(offset.x*imageSurface->w/100.0f-lmargin_x+imageSurface->w);
-      destRect.y = (int)(offset.y*imageSurface->h/100.0f-lmargin_y/2.0f+imageSurface->h/2.0f);
-      break;
-    }
-    case 6:{
-      destRect.x = (int)(offset.x*imageSurface->w/100.0f);
-      destRect.y = (int)(offset.y*imageSurface->h/100.0f-lmargin_y+imageSurface->h);
-      break;
-    }
-    case 7:{
-      destRect.x = (int)(offset.x*imageSurface->w/100.0f-lmargin_x/2.0f+imageSurface->w/2.0f);
-      destRect.y = (int)(offset.y*imageSurface->h/100.0f-lmargin_y+imageSurface->h);
-      break;
-    }
-    case 8:{
-      destRect.x = (int)(offset.x*imageSurface->w/100.0f-lmargin_x+imageSurface->w);
-      destRect.y = (int)(offset.y*imageSurface->h/100.0f-lmargin_y+imageSurface->h);
-      break;
-    }
     default:
+      xPos += lmargin_x;
       break;
   }
 
-  SDL_BlitSurface(bgSurface, NULL, imageSurface, &destRect);
-  SDL_DestroySurface(textSurface);
-  SDL_DestroySurface(bgSurface);
+  int yPos = (int)(cfg.offset.y*cr->bottom/100.0f);
+  int lmargin_y;
+  if(cfg.fixed_size.y < 0){
+    lmargin_y = (int)(cfg.margin.y*cr->bottom/100.0f)+textHeight;
+  }else{
+    lmargin_y = (int)(cfg.fixed_size.y);
+  }
+
+  switch (cfg.anchor)
+  {
+    case 3:
+    case 4:
+    case 5:
+      yPos += (int)(cr->bottom/2.0f);
+      break;
+    case 6:
+    case 7:
+    case 8:
+      yPos += cr->bottom-lmargin_y/2;
+      break;
+    default:
+      yPos += lmargin_y/2;
+      break;
+  }
+
+  RECT bgRect = {
+    xPos - lmargin_x/2,
+    yPos - lmargin_y/2,
+    xPos + lmargin_x/2,
+    yPos + lmargin_y/2
+  };
+
+  HBRUSH hBrush = CreateSolidBrush(RGB(0, 0, 0));
+
+  HDC hdcAlpha = CreateCompatibleDC(hdc);
+  HBITMAP hBmpAlpha = CreateCompatibleBitmap(hdc, bgRect.right - bgRect.left, bgRect.bottom - bgRect.top);
+  HBITMAP hOldBmpAlpha = (HBITMAP)SelectObject(hdcAlpha, hBmpAlpha);
+
+  RECT alphaRect = {0, 0, bgRect.right - bgRect.left, bgRect.bottom - bgRect.top};
+  FillRect(hdcAlpha, &alphaRect, hBrush);
+  DeleteObject(hBrush);
+
+  BLENDFUNCTION bf = {0};
+  bf.BlendOp = AC_SRC_OVER;
+  bf.BlendFlags = 0;
+  bf.SourceConstantAlpha = 128;
+  bf.AlphaFormat = 0;
+
+  cout << bgRect << endl;
+  AlphaBlend(
+    hdc, 
+    bgRect.left, bgRect.top, 
+    bgRect.right - bgRect.left, bgRect.bottom - bgRect.top,
+    hdcAlpha, 
+    0, 0, 
+    bgRect.right - bgRect.left, bgRect.bottom - bgRect.top,
+    bf
+  );
+
+  textRect.left = xPos - textWidth/2;
+  textRect.top = yPos - textHeight/2;
+  textRect.right = xPos + textWidth/2;
+  textRect.bottom = yPos + textHeight/2;
+  DrawText(hdc, ConvertUtf8ToWide(display_str).c_str(), -1, &textRect, DT_LEFT);
+  BitBlt(hdc, 0, 0, cr->right, cr->bottom, hdc, 0, 0, SRCCOPY);
+
+  SelectObject(hdcAlpha, hOldBmpAlpha);
+  SelectObject(hdc, hOldFont);
+
+  DeleteObject(hBmpAlpha);
+  DeleteObject(hFont);
+  DeleteDC(hdcAlpha);
 }

@@ -1,16 +1,15 @@
 
 #include "extwinapi.h"
 #include "timer.h"
-#include "struct_mapping/struct_mapping.h"
 #include "util.h"
+#include "json/json.hpp"
 
 using namespace util;
+using json = nlohmann::json;
 
 static void usage(const char *prog){
 
   vector<string> message{
-    //xorstr_("The following is required:"),
-    //"",
     xorstr_("Optional arguments:"),
     xorstr_("\t-config-path                  ()"),
     xorstr_("\t-restore -r                   (sets the original wallpaper)"),
@@ -26,6 +25,204 @@ static void test_arg(int i, int argc, const char *argv){
   if(i+1 >= argc){
     printf_s(xorstr_("\nNeed more arguments after %s. Use \"sdc -help\" for usage.\n\n"), argv);
     exit(1);
+  }
+}
+
+HWND FindWallpaperWindow() {
+  HWND hProgman = FindWindow(TEXT("ProgMan"), nullptr);
+  if (!hProgman) return nullptr;
+
+  SendMessage(hProgman, 0x052C, 0, 0);
+
+  HWND hWallpaperWnd = nullptr;
+  EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
+    if (FindWindowEx(hwnd, nullptr, L"SHELLDLL_DefView", nullptr)) {
+      HWND* result = reinterpret_cast<HWND*>(lParam);
+      *result = FindWindowEx(nullptr, hwnd, L"WorkerW", nullptr);
+      return FALSE;
+    }
+    return TRUE;
+  }, reinterpret_cast<LPARAM>(&hWallpaperWnd));
+
+  return hWallpaperWnd;
+}
+
+//https://habr.com/ru/articles/185252/
+
+//https://stackoverflow.com/a/56107709
+uint64_t timeStampMil() {
+  return duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+void check_unknown_keys(const json& j, const set<string>& known_keys) {
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    if (known_keys.find(it.key()) == known_keys.end()) {
+      throw runtime_error("Unknown key: " + it.key());
+    }
+  }
+}
+
+void from_json(const json& j, config_vec2_t& v) {
+  if (!j.is_array() || j.size() != 2) {
+    throw runtime_error("vec2 must be an array of two numbers");
+  }
+
+  if(!j[0].is_number())
+    throw runtime_error(xorstr_("\n\"vec2.x\" must be a number"));
+  j[0].get_to(v.x);
+  if(!j[1].is_number())
+    throw runtime_error(xorstr_("\n\"vec2.y\" must be a number"));
+  j[1].get_to(v.y);
+}
+
+void from_json(const json& j, timer_t& t) {
+  set<string> known_keys = {"text", "end_date", "anchor", "font_size", 
+                            "offset", "margin", "fixed_size", "detailed_time",
+                            "text_color", "bg_color"};
+  check_unknown_keys(j, known_keys);
+
+  if(!j.contains("text"))
+    throw runtime_error(xorstr_("\n\"text\" key required in timer config"));
+  if(!j.at("text").is_string())
+    throw runtime_error(xorstr_("\n\"text\" must be a string"));
+
+  j.at("text").get_to(t.text);
+
+  if (j.contains("end_date")) {
+    if(!j.at("end_date").is_string())
+      throw runtime_error(xorstr_("\n\"end_date\" must be a string"));
+    string tmp_str;
+    j.at("end_date").get_to(tmp_str);
+    istringstream ss(tmp_str);
+    tm tm = {};
+    ss >> get_time(&tm, "%Y-%m-%d %H:%M:%S");
+    tm.tm_isdst = 0;
+    if (ss.fail())
+      throw runtime_error(xorstr_("\nDate in config parsing failed!\nRequired format: \"Y-m-d H:M:S\""));
+    t.end_date = mktime(&tm);
+  }else{
+    throw runtime_error(xorstr_("\n\"end_date\" key required in timer config"));
+  }
+
+  if (j.contains("anchor")) {
+    if(!j.at("text_color").is_string())
+      throw runtime_error(xorstr_("\n\"text_color\" must be a string, and contains one of them\n  (top_left, top_middle, top_right,\n   left_middle, center, right_middle,\n   bottom_left, bottom_middle, bottom_right)"));
+    string tmp_str;
+    j.at("anchor").get_to(tmp_str);
+    if(tmp_str == "top_left"){
+      t.anchor = 0;
+    }else if(tmp_str == "top_middle"){
+      t.anchor = 1;
+    }else if(tmp_str == "top_right"){
+      t.anchor = 2;
+    }else if(tmp_str == "left_middle"){
+      t.anchor = 3;
+    }else if(tmp_str == "center"){
+      t.anchor = 4;
+    }else if(tmp_str == "right_middle"){
+      t.anchor = 5;
+    }else if(tmp_str == "bottom_left"){
+      t.anchor = 6;
+    }else if(tmp_str == "bottom_middle"){
+      t.anchor = 7;
+    }else if(tmp_str == "bottom_right"){
+      t.anchor = 8;
+    }else{
+      throw runtime_error(xorstr_("\nAnchor must be equal to one of \n  (top_left, top_middle, top_right,\n   left_middle, center, right_middle,\n   bottom_left, bottom_middle, bottom_right)\n"));
+    }
+  } else {
+    t.anchor = 4;
+  }
+
+  if (j.contains("font_size")) {
+    if(!j.at("font_size").is_number())
+      throw runtime_error(xorstr_("\n\"font_size\" must be a number"));
+    j.at("font_size").get_to(t.font_size);
+  } else {
+    t.font_size = 6;
+  }
+
+  if (j.contains("offset")) {
+    if(!j.at("offset").is_array())
+      throw runtime_error(xorstr_("\n\"offset\" must be an array"));
+    j.at("offset").get_to(t.offset);
+  } else {
+    t.offset = {0, 0};
+  }
+
+  if (j.contains("margin")) {
+    if(!j.at("margin").is_array())
+      throw runtime_error(xorstr_("\n\"margin\" must be an array"));
+    j.at("margin").get_to(t.margin);
+  } else {
+    t.margin = {0, 0};
+  }
+
+  if (j.contains("fixed_size")) {
+    if(!j.at("fixed_size").is_array())
+      throw runtime_error(xorstr_("\n\"fixed_size\" must be an array"));
+    j.at("fixed_size").get_to(t.fixed_size);
+  } else {
+    t.fixed_size = {-1, -1};
+  }
+
+  if (j.contains("detailed_time")) {
+    if(!j.at("detailed_time").is_boolean())
+      throw runtime_error(xorstr_("\n\"detailed_time\" must be a boolean"));
+    j.at("detailed_time").get_to(t.detailed_time);
+  } else {
+    t.detailed_time = false;
+  }
+
+  if (j.contains("text_color")) {
+    if(!j.at("text_color").is_string())
+      throw runtime_error(xorstr_("\n\"text_color\" must be a string"));
+    try {
+      string tmp_str;
+      j.at("text_color").get_to(tmp_str);
+      t.text_color = ((uint32_t)stoul(tmp_str, nullptr, 16));
+    } catch(const exception& exc) {
+      throw runtime_error(xorstr_("\nException caught while parsing \"text_color\" in timer config: ") + string(exc.what()));
+    }
+  } else {
+    t.text_color = 0xffffffff;
+  }
+
+  if (j.contains("bg_color")) {
+    if(!j.at("bg_color").is_string())
+      throw runtime_error(xorstr_("\n\"bg_color\" must be a string"));
+    try {
+      string tmp_str;
+      j.at("bg_color").get_to(tmp_str);
+      t.bg_color = ((uint32_t)stoul(tmp_str, nullptr, 16));
+    } catch(const exception& exc) {
+      throw runtime_error(xorstr_("\nException caught while parsing \"bg_color\" in timer config: ") + string(exc.what()));
+    }
+  } else {
+    t.bg_color = 0x000000b0;
+  }
+}
+
+void from_json(const json& j, sdc_config_t& c) {
+  set<string> known_keys = {"update_delay", "timers"};
+  check_unknown_keys(j, known_keys);
+
+  if(j.contains("update_delay")){
+    if(!j.at("update_delay").is_number_integer())
+      throw runtime_error(xorstr_("\n\"update_delay\" must be a integer"));
+    j.at("update_delay").get_to(c.update_delay);
+  }else{
+    c.update_delay = 900;
+  }
+  {
+    if(!j.contains("timers"))
+      throw runtime_error(xorstr_("\n\"timers\" key required in config file"));
+    if(!j.at("timers").is_array())
+      throw runtime_error(xorstr_("\n\"timers\" must be an array"));
+    j.at("timers").get_to(c.timers);
+    if(c.timers.size() == 0){
+      throw runtime_error(xorstr_("\n\"timers\" content must be not equal to []"));
+    }
   }
 }
 
@@ -60,66 +257,28 @@ int main(int argc, char const *argv[]) {
     }
   }
 
-  //string dateString = "2025-09-06 18:09:00";
-  //tm tm_struct = {}; // Initialize to all zeros
-  //istringstream ss(dateString);
-  //ss >> get_time(&tm_struct, "%Y-%m-%d %H:%M:%S"); // Specify the format
-  //if (ss.fail()) {
-  //    cerr << "Date parsing failed!" << endl;
-  //} else {
-  //    time_t time_value = mktime(&tm_struct); // Convert tm to time_t
-  //    // Use time_value as needed
-  //    cout << "Parsed date: " << asctime(localtime(&time_value));
-  //}
-
-  //  // 1. Find Progman
-  //  HWND progman = FindWindowW(L"Progman", NULL);
-  //  if (progman == NULL) {
-  //      // Handle error
-  //      return 1;
-  //  }
-
-  //  // 2. Send message to Progman to reveal WorkerW
-  //  SendMessageW(progman, 0x052C, 0, 0);
-
-  //  // 3. Find WorkerW (this might require iterating through child windows of Progman)
-  //  // This is a simplified placeholder; actual WorkerW finding is more complex.
-  //  HWND workerW = FindWindowW(L"WorkerW", NULL); 
-  //  if (workerW == NULL) {
-  //      // Handle error
-  //      return 1;
-  //  }
-
-  //  // 4. Get device context for WorkerW
-  //  HDC hdcWorkerW = GetDC(workerW);
-  //  if (hdcWorkerW == NULL) {
-  //      // Handle error
-  //      return 1;
-  //  }
-
-  //  // 5. Animation loop (example: drawing a simple rectangle)
-  //  RECT rect;
-  //  GetClientRect(workerW, &rect); // Get client area of WorkerW
-
-  //  for (int i = 0; i < 100; ++i) { // Simple loop for demonstration
-  //      // Clear previous drawing (optional, depending on animation)
-  //      FillRect(hdcWorkerW, &rect, (HBRUSH)GetStockObject(BLACK_BRUSH)); 
-
-  //      // Draw something new
-  //      RECT currentRect = {i, i, i + 50, i + 50}; // Example: moving rectangle
-  //      FillRect(hdcWorkerW, &currentRect, (HBRUSH)GetStockObject(WHITE_BRUSH));
-
-  //      Sleep(50); // Small delay for animation
-  //  }
-
-  //  // Clean up
-  //  ReleaseDC(workerW, hdcWorkerW);
-
-
-  //return 0;
-
-  FilePath origWallpaper = FilePath(getexepath() / "original.jpg");
   FilePath restoreFile = FilePath(getexepath() / "original_path.txt");
+
+  //DEPRECATED
+  if(!PathFileExistsA(restoreFile.fp_s.c_str())){
+    wchar_t *szWallpaperPath[MAX_PATH];
+    FunctionHandlerL(!SystemParametersInfo(SPI_GETDESKWALLPAPER, MAX_PATH, szWallpaperPath, 0), "SDC", "Cannot get current wallpaper path");
+
+    //Writing restore file
+    HANDLE hRestoreFile = CreateFileA(restoreFile.fp_s.c_str(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+
+    HandleCreateFileSD(hRestoreFile, restoreFile.fp_s.c_str());
+
+    string cyrillic_text = ConvertWideToUtf8(wstring((LPTSTR)szWallpaperPath));
+
+    WriteFileS(hRestoreFile, cyrillic_text.c_str(), cyrillic_text.length() * sizeof(char), NULL, NULL);
+
+    CloseHandle(hRestoreFile);
+
+#ifdef DEBUG
+    wprintf_s(xorstr_(TEXT("%s\n")), (LPTSTR)szWallpaperPath);
+#endif
+  }
 
   if(restore){
     printf_s(xorstr_("\nRestoring orginal wallpaper\n"));
@@ -142,88 +301,31 @@ int main(int argc, char const *argv[]) {
     return 0;
   }
 
-  // Initialize SDL stuff
-  if (!SDL_Init(0)) {
-      printf_s(xorstr_("SDL could not initialize! SDL_Error: %s\n"), SDL_GetError());
-      SDL_Quit();
-      return EXIT_FAILURE;
-  }
-  if (!TTF_Init()) {
-      printf_s(xorstr_("SDL_ttf could not initialize! SDL_Error: %s\n"), SDL_GetError());
-      SDL_Quit();
-      return EXIT_FAILURE;
-  }
+  LPTSTR szWallpaperPath[MAX_PATH];
+  FunctionHandlerL(!SystemParametersInfo(SPI_GETDESKWALLPAPER, MAX_PATH, szWallpaperPath, 0), "SDC", "Cannot get current wallpaper path");
+  FunctionHandlerL(!SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, szWallpaperPath, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE), "SDC", "Cannot set wallpaper path");
 
-  if(!PathFileExistsA(origWallpaper.fp_s.c_str()) || !PathFileExistsA(restoreFile.fp_s.c_str())){
-    wchar_t *szWallpaperPath[MAX_PATH];
-    FunctionHandlerL(!SystemParametersInfo(SPI_GETDESKWALLPAPER, MAX_PATH, szWallpaperPath, 0), "SDC", "Cannot get current wallpaper path");
-
-    //Writing restore file
-    HANDLE hRestoreFile = CreateFileA(restoreFile.fp_s.c_str(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
-
-    HandleCreateFileSD(hRestoreFile, restoreFile.fp_s.c_str());
-
-    string cyrillic_text = ConvertWideToUtf8(wstring((LPTSTR)szWallpaperPath));
-
-    WriteFileS(hRestoreFile, cyrillic_text.c_str(), cyrillic_text.length() * sizeof(char), NULL, NULL);
-
-    CloseHandle(hRestoreFile);
-
-#ifdef DEBUG
-    wprintf_s(xorstr_(TEXT("%s\n")), (LPTSTR)szWallpaperPath);
-#endif
-
-    HANDLE in_file_handle = CreateFile((LPTSTR)szWallpaperPath, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-
-    HandleCreateFileWSD(in_file_handle, (LPTSTR)szWallpaperPath);
-
-    DWORD size = GetFileSize(in_file_handle, NULL);
-    PVOID virtualpointer = VirtualAlloc(NULL, size, MEM_COMMIT, PAGE_READWRITE);
-
-    ReadFileS(in_file_handle, virtualpointer, size, NULL, NULL);
-
-    CloseHandle(in_file_handle);
-
-    HANDLE out_file_handle = CreateFileA(origWallpaper.fp_s.c_str(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
-
-    HandleCreateFileSD(out_file_handle, origWallpaper.fp_s.c_str());
-
-    //Copying to output
-    WriteFileS(out_file_handle, virtualpointer, size, NULL, NULL);
-
-    CloseHandle(out_file_handle);
-  }
-
-  fs::path output_fn = origWallpaper.fp.stem();
-  FilePath output_file = FilePath(getexepath() / (output_fn.string()+xorstr_("_updated")+origWallpaper.fp.extension().string()));
-
-  SDL_Surface* imageSurface = IMG_Load(origWallpaper.fp_s.c_str());
-  if (!imageSurface){
-    printf_s(xorstr_("Wallpaper image could not initialize! SDL_Error: %s\n"), SDL_GetError());
-    TTF_Quit();
-    SDL_Quit();
-    return EXIT_FAILURE;
+  HWND hWallpaper = FindWallpaperWindow();
+  if (!hWallpaper) {
+    MessageBox(nullptr, L"Не удалось найти окно обоев", L"Ошибка", MB_ICONERROR);
+    return 1;
   }
 
   vector<unique_ptr<Timer>> timers;
 
-  struct_mapping::reg(&sdc_config_t::update_delay, "update_delay");
-  struct_mapping::reg(&sdc_config_t::save_quality, "save_quality");
-  struct_mapping::reg(&sdc_config_t::background_run, "background_run");
-  struct_mapping::reg(&sdc_config_t::timers, "timers");
-  struct_mapping::reg(&timer_t::text, "text");
-  struct_mapping::reg(&timer_t::font_size, "font_size");
-  struct_mapping::reg(&timer_t::end_date, "end_date");
-  struct_mapping::reg(&timer_t::anchor, "anchor");
-  struct_mapping::reg(&timer_t::offset, "offset");
-  struct_mapping::reg(&timer_t::margin, "margin");
-  struct_mapping::reg(&timer_t::detailed_time, "detailed_time");
-  struct_mapping::reg(&timer_t::text_color, "text_color");
-  struct_mapping::reg(&timer_t::bg_color, "bg_color");
-
   sdc_config_t sdc_config;
-  auto sdccstream = ifstream(SDCConfigFile.fp);
-  struct_mapping::map_json_to_struct(sdc_config, sdccstream);
+  try {
+    auto sdccstream = ifstream(SDCConfigFile.fp);
+
+    json j = json::parse(sdccstream, nullptr, true, true);
+
+    sdc_config = j.get<sdc_config_t>();
+
+    sdccstream.close();
+  } catch(const exception& e) {
+    cerr << "\nException caught while reading config file: \n  " << e.what() << '\n' << endl;
+    return EXIT_FAILURE;
+  }
 
   if(sdc_config.update_delay < 1){
     printf_s(xorstr_("\nERROR: Update time must be greater than 0\n"));
@@ -238,42 +340,42 @@ int main(int argc, char const *argv[]) {
     }
   }
 
-  if(!sdc_config.background_run)
-    ShowWindow(GetConsoleWindow(), SW_HIDE);
+  ShowWindow(GetConsoleWindow(), SW_HIDE);
+
+  HDC hdc = GetDC(hWallpaper);
+
+  RECT cr;
+  GetClientRect(hWallpaper, &cr);
+
+  //saving original wp hdc
+  HDC hdcSRC = CreateCompatibleDC(hdc);
+  HBITMAP hbmSRC = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
+  HANDLE hOldSRC = SelectObject(hdcSRC, hbmSRC);
+  BitBlt(hdcSRC, 0, 0, cr.right, cr.bottom, hdc, 0, 0, SRCCOPY);
+
+  HDC hdcMem = CreateCompatibleDC(hdc);
+  HBITMAP hbmMem = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
+  HANDLE hOld = SelectObject(hdcMem, hbmMem);
 
   while(1){
-    SDL_Surface* convertedImageSurface = SDL_ConvertSurface(imageSurface, SDL_PIXELFORMAT_RGBA8888);
-    if (!convertedImageSurface){
-      printf_s(xorstr_("Wallpaper image could not be converted to RGBA format! SDL_Error: %s\n"), SDL_GetError());
-      TTF_Quit();
-      SDL_Quit();
-      return EXIT_FAILURE;
-    }
+    BitBlt(hdcMem, 0, 0, cr.right, cr.bottom, hdcSRC, 0, 0, SRCCOPY);
     for(auto &x : timers)
-      x->render(convertedImageSurface);
+      x->render(hdcMem, &cr);
 
-    IMG_SaveJPG(convertedImageSurface, output_file.fp_s.c_str(), (int)sdc_config.save_quality);
-    SDL_DestroySurface(convertedImageSurface);
-
-    FunctionHandlerL(!SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0, (LPVOID)output_file.fp_s.c_str(), SPIF_UPDATEINIFILE), "SDC", "Cannot set wallpaper path");
-
-    if(!sdc_config.background_run) break;
-    else{
-      SDL_DestroySurface(imageSurface);
-      imageSurface = IMG_Load(origWallpaper.fp_s.c_str());
-      if (!imageSurface){
-        printf_s(xorstr_("Wallpaper image could not initialize! SDL_Error: %s\n"), SDL_GetError());
-        TTF_Quit();
-        SDL_Quit();
-        return EXIT_FAILURE;
-      }
-      Sleep(sdc_config.update_delay);
-    }
+    BitBlt(hdc, 0, 0, cr.right, cr.bottom, hdcMem, 0, 0, SRCCOPY);
+    Sleep(sdc_config.update_delay);
   }
-  SDL_DestroySurface(imageSurface);
 
-  TTF_Quit();
-  SDL_Quit();
+  BitBlt(hdc, 0, 0, cr.right, cr.bottom, hdcSRC, 0, 0, SRCCOPY);
+  SelectObject(hdcMem, hOld);
+  SelectObject(hdcSRC, hOldSRC);
+
+  DeleteObject(hbmMem);
+  DeleteDC (hdcMem);
+  DeleteObject(hbmSRC);
+  DeleteDC (hdcSRC);
+
+  ReleaseDC(hWallpaper, hdc);
 
   return 0;
 }

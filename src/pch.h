@@ -9,6 +9,7 @@
 
 #include <Windows.h>
 #include <shlwapi.h>
+//#include <gdiplus.h>
 #include <locale>
 //#include <cstddef>
 #include <iostream>
@@ -33,14 +34,10 @@
 //#include <cstdio>
 //#include <regex>
 //#include <map>
-//#include <set>
+#include <set>
 //#include <variant>
 //#include <algorithm>
 #include "xorstr.hpp"
-
-#include <SDL3/SDL.h>
-#include <SDL3_ttf/SDL_ttf.h>
-#include <SDL3_image/SDL_image.h>
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -87,7 +84,5 @@ enum ConsoleForeground
   YELLOW            = FOREGROUND_INTENSITY | FOREGROUND_RED | FOREGROUND_GREEN,
   WHITE             = FOREGROUND_INTENSITY | FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,
 };
-//extern PCONSOLE_SCREEN_BUFFER_INFO consoleScreenInfo;
-//extern HANDLE hConsoleOutput;
  
 #endif

@@ -1,15 +1,14 @@
 {
-  "update_delay": 1000.0,
-  "save_quality": 100,
-  "background_run": true,
+  "update_delay": 900,
   "timers": [
     {
       "text": "До лета осталось:",
       "end_date": "2026-06-01 00:00:00",
       "anchor": "top_middle",
-      "font_size": 3.0,
+      "font_size": 3.5,
       "offset": [0, 0],
       "margin": [2, 2],
+      "fixed_size": [1920, -1],
       "detailed_time": true,
       "text_color": "0xffffffff",
       "bg_color": "0x000000b0"
@@ -20,7 +19,7 @@
       "anchor": "center",
       "font_size": 3.0,
       "offset": [0, 0],
-      "margin": [2, 2],
+      "margin": [2, 0],
       "detailed_time": true,
       "text_color": "0xffffffff",
       "bg_color": "0x000000b0"
@@ -28,10 +27,9 @@
     {
       "text": "До чего-нибудь осталось:",
       "end_date": "2025-09-07 18:09:00",
-      "anchor": "left_middle",
+      "anchor": "right_middle",
       "font_size": 3.0,
-      "offset": [0, 0],
-      "margin": [2, 2],
+      "margin": [2, 0],
       "detailed_time": false,
       "text_color": "0xffffffff",
       "bg_color": "0x000000b0"

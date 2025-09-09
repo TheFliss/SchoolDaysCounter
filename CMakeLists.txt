@@ -16,10 +16,6 @@ endforeach()
 # Configure to build 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${SRC}/builds")
 
-find_package(SDL3 REQUIRED)
-find_package(SDL3_image REQUIRED)
-find_package(SDL3_ttf REQUIRED)
-
 file(GLOB_RECURSE ${PROJECT_NAME}_All
   ${SRC}/src/*.cpp
   ${SRC}/src/*.c
@@ -39,15 +35,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 
   Shlwapi.lib
-  SDL3::SDL3
-  SDL3_image::SDL3_image
-  SDL3_ttf::SDL3_ttf
+  Msimg32.lib
 )
 
-## EnTT Config Options
-#target_compile_definitions(${PROJECT_NAME} PUBLIC
-#  ENTT_PACKED_PAGE=128
-#)
 target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CONFIG:Debug>:DEBUG>)
 
 target_compile_options(${PROJECT_NAME} PRIVATE
@@ -56,25 +46,3 @@ target_compile_options(${PROJECT_NAME} PRIVATE
   $<$<COMPILE_LANGUAGE:CXX>:/MD>
   $<$<COMPILE_LANGUAGE:CXX>:/W4>
 )
-if(WIN32)
-  add_custom_command(
-      TARGET ${PROJECT_NAME} POST_BUILD
-      COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SDL3::SDL3-shared> $<TARGET_FILE_DIR:${PROJECT_NAME}>
-      VERBATIM
-  )
-  add_custom_command(
-      TARGET ${PROJECT_NAME} POST_BUILD
-      COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SDL3_image::SDL3_image-shared> $<TARGET_FILE_DIR:${PROJECT_NAME}>
-      VERBATIM
-  )
-  add_custom_command(
-      TARGET ${PROJECT_NAME} POST_BUILD
-      COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SDL3_ttf::SDL3_ttf-shared> $<TARGET_FILE_DIR:${PROJECT_NAME}>
-      VERBATIM
-  )
-  #add_custom_command(
-  #    TARGET ${PROJECT_NAME} POST_BUILD
-  #    COMMAND "${CMAKE_COMMAND}" -E copy ${SRC}/sdc_config.json $<TARGET_FILE_DIR:${PROJECT_NAME}>
-  #    VERBATIM
-  #)
-endif()
