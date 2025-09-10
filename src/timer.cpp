@@ -93,14 +93,14 @@ void Timer::render(HDC hdc, RECT *cr) {
     if(tdiff.d > 0)
       display_str += to_string(tdiff.d) + ' ' + declination_word(tdiff.d, xorstr_("день"), xorstr_("дня"), xorstr_("дней")) + (cfg.detailed_time ? ", " : " и ");
 
-    if(tdiff.d > 0 || tdiff.d > 0)
-      display_str += to_string(tdiff.d) + ' ' + declination_word(tdiff.d, xorstr_("час"), xorstr_("часа"), xorstr_("часов"));
+    if(tdiff.h > 0 || tdiff.d > 0)
+      display_str += to_string(tdiff.h) + ' ' + declination_word(tdiff.h, xorstr_("час"), xorstr_("часа"), xorstr_("часов"));
 
     if(cfg.detailed_time){
-      if(tdiff.d > 0 || tdiff.d > 0)
+      if(tdiff.h > 0 || tdiff.d > 0)
         display_str += ", ";
 
-      if(tdiff.m > 0 || tdiff.d > 0 || tdiff.d > 0)
+      if(tdiff.m > 0 || tdiff.h > 0 || tdiff.d > 0)
         display_str += to_string(tdiff.m) + ' ' + declination_word(tdiff.m, xorstr_("минута"), xorstr_("минуты"), xorstr_("минут")) + " и ";
 
       display_str += to_string(tdiff.s) + ' ' + declination_word(tdiff.s, xorstr_("секунда"), xorstr_("секунды"), xorstr_("секунд"));
