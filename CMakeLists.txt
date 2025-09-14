@@ -43,6 +43,6 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CONFIG:Debug>:DEBUG>)
 target_compile_options(${PROJECT_NAME} PRIVATE
   $<$<COMPILE_LANGUAGE:CXX>:/MP>
   $<$<COMPILE_LANGUAGE:CXX>:/MT>
-  $<$<COMPILE_LANGUAGE:CXX>:/MD>
+  #$<$<COMPILE_LANGUAGE:CXX>:/MD>
   $<$<COMPILE_LANGUAGE:CXX>:/W4>
 )
