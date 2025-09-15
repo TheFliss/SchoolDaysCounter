@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 set(CMAKE_GENERATOR_PLATFORM x64)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
 set(SRC "${CMAKE_CURRENT_SOURCE_DIR}")
+set(PROJECT_VERSION "L\"3.1.0\"")
 
 # Compiler Options
 set(CMAKE_CXX_STANDARD 23)
@@ -36,9 +37,11 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 target_link_libraries(${PROJECT_NAME} PRIVATE 
   Shlwapi.lib
   Msimg32.lib
+  Comctl32.lib
+  UxTheme.lib
 )
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CONFIG:Debug>:DEBUG>)
+target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CONFIG:Debug>:DEBUG> PROJECT_VERSION="${PROJECT_VERSION}")
 
 target_compile_options(${PROJECT_NAME} PRIVATE
   $<$<COMPILE_LANGUAGE:CXX>:/MP>

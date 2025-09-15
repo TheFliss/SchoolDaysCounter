@@ -10,6 +10,7 @@
 #include <Windows.h>
 #include <shlwapi.h>
 #include <shellapi.h>
+#include <Uxtheme.h>
 //#include <gdiplus.h>
 #include <locale>
 //#include <cstddef>
@@ -46,9 +47,11 @@ namespace fs = std::filesystem;
 #define ID_BUTTON1 101
 #define ID_BUTTON2 102
 #define ID_BUTTON3 103
-#define ID_TRAY_ICON 104
-#define ID_TRAY_RESTORE 105
-#define ID_TRAY_EXIT 106
+#define ID_BUTTON4 104
+#define ID_EDIT1 120
+#define ID_TRAY_ICON 110
+#define ID_TRAY_RESTORE 111
+#define ID_TRAY_EXIT 112
 #define WM_TRAYICON (WM_USER + 1)
 
 class FilePath {

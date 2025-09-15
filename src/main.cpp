@@ -107,24 +107,130 @@ void ShowTrayMenu(HWND hwnd)
   }
 }
 
+std::ostream&
+operator<<(std::ostream& os, const LOGFONTW& x)
+{
+  os << x.lfHeight << " lfHeight\n"
+      << x.lfWidth << " lfWidth\n"
+      << x.lfEscapement << " lfEscapement\n"
+      << x.lfOrientation << " lfOrientation\n"
+      << x.lfWeight << " lfWeight\n"
+      << (int)x.lfItalic << " lfItalic\n"
+      << (int)x.lfUnderline << " lfUnderline\n"
+      << (int)x.lfStrikeOut << " lfStrikeOut\n"
+      << (int)x.lfCharSet << " lfCharSet\n"
+      << (int)x.lfOutPrecision << " lfOutPrecision\n"
+      << (int)x.lfClipPrecision << " lfClipPrecision\n"
+      << (int)x.lfQuality << " lfQuality\n"
+      << (int)x.lfPitchAndFamily << " lfPitchAndFamily\n";
+  wcout << x.lfFaceName << " lfFaceName\n";
+  return os;
+}
 
+HWND DoCreateStatusBar(HWND hwndParent, int idStatus)
+{
+  HWND hwndStatus;
+  RECT rcClient;
+  HLOCAL hloc;
+  PINT paParts;
+  int i, nWidth;
+
+  // Create the status bar.
+  hwndStatus = CreateWindowEx(
+      0,                       // no extended styles
+      STATUSCLASSNAME,         // name of status bar class
+      (PCTSTR) NULL,           // no text when first created
+      WS_CHILD | WS_VISIBLE,   // creates a visible child window
+      0, 0, 0, 0,              // ignores size and position
+      hwndParent,              // handle to parent window
+      (HMENU) idStatus,       // child window identifier
+      NULL,                   // handle to application instance
+      NULL);                   // no window creation data
+
+  // Get the coordinates of the parent window's client area.
+  GetClientRect(hwndParent, &rcClient);
+
+  // Allocate an array for holding the right edge coordinates.
+  hloc = LocalAlloc(LHND, sizeof(int) * 3);
+  paParts = (PINT) LocalLock(hloc);
+  paParts[0] = 1;
+  paParts[1] = 78;
+  paParts[2] = -1;
+  //// Calculate the right edge coordinate for each part, and
+  //// copy the coordinates to the array.
+  //nWidth = rcClient.right / cParts;
+  //int rightEdge = nWidth;
+  //for (i = 0; i < cParts; i++) { 
+  //    paParts[i] = rightEdge;
+  //    rightEdge += nWidth;
+  //}
+
+  // Tell the status bar to create the window parts.
+  SendMessage(hwndStatus, SB_SETPARTS, (WPARAM)3, (LPARAM)
+              paParts);
+
+  // Free the array, and return.
+  LocalUnlock(hloc);
+  LocalFree(hloc);
+  return hwndStatus;
+}
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   switch (msg)
   {
   case WM_CREATE:
   {
-    CreateWindowW(L"BUTTON", L"1 Button",
-                  WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  50, 30, 200, 30, hwnd, (HMENU)ID_BUTTON1, NULL, NULL);
+    HDC hdc = GetDC(hwnd);
+    NONCLIENTMETRICS metrics = {};
+    metrics.cbSize = sizeof(metrics);
+    SystemParametersInfo(SPI_GETNONCLIENTMETRICS, metrics.cbSize, &metrics, 0);
 
-    CreateWindowW(WideFromUtf8("BUTTON"), L"2 Button",
-                  WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  50, 70, 200, 30, hwnd, (HMENU)ID_BUTTON2, NULL, NULL);
+    HFONT guiFont = CreateFontIndirect(&metrics.lfMessageFont);
 
-    CreateWindowW(L"BUTTON", L"3 Button",
+    //cout << metrics.lfMenuFont << endl;
+
+    HFONT hOldFont = (HFONT)SelectObject(hdc, guiFont);
+    CreateWindowW(WC_BUTTON, WideFromUtf8("Обновить конфиг"),
                   WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  50, 110, 200, 30, hwnd, (HMENU)ID_BUTTON3, NULL, NULL);
+                  120, 30, 130, 30, hwnd, (HMENU)ID_BUTTON1, NULL, NULL);
+
+    CreateWindowW(WC_BUTTON, WideFromUtf8("Восстановить обои"),
+                  WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                  120, 70, 130, 30, hwnd, (HMENU)ID_BUTTON2, NULL, NULL);
+
+    CreateWindowW(WC_BUTTON, WideFromUtf8("Запуск"),
+                  WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                  5, 5, 120, 40, hwnd, (HMENU)ID_BUTTON3, NULL, NULL);
+HWND hEdit = CreateWindowW(
+    TEXT("Edit"), // Predefined class name for edit controls
+    TEXT("Initial Text"), // Initial text in the textbox (can be empty)
+    WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, // Styles
+    10, 10, // X, Y position
+    200, 25, // Width, Height
+    hwnd, // Parent window handle
+    (HMENU)ID_EDIT1, // Control ID (for identifying messages)
+    NULL, // Application instance handle
+    NULL // Additional creation parameters
+);
+
+    HWND statusbar = DoCreateStatusBar(hwnd, 110);
+    //= CreateWindowW(STATUSCLASSNAME, WideFromUtf8("Восстановить обои"),
+    //              SBARS_SIZEGRIP | WS_CHILD,
+    //              50, 120, 200, 30, hwnd, NULL, NULL, NULL);
+    //SendMessage(statusbar, SB_SETTEXT, SB_SIMPLEID, (LPARAM)"Your Status Text Here");
+    //int parts[] = {100, 200, -1}; // Example: two parts, then fill remaining space
+    //SendMessage(statusbar, SB_SETPARTS, (WPARAM)ARRAYSIZE(parts), (LPARAM)parts);
+    SendMessage(statusbar, SB_SETTEXT, (WPARAM)1, (LPARAM)L"Version 3.1.0"); // Set text for the first part
+    SendMessage(statusbar, SB_SETTEXT, (WPARAM)2, (LPARAM)L"Made by github.com/TheFliss"); // Set text for the second part
+    EnumChildWindows(hwnd, [](HWND hwnd, LPARAM lParam) -> BOOL {
+      HFONT hfDefault = *(HFONT *) lParam;
+      SendMessage(hwnd, WM_SETFONT, (WPARAM) hfDefault, TRUE);
+      SetWindowTheme(hwnd, L"Explorer", NULL);
+      return TRUE;
+    }, (LPARAM)&guiFont);
+    SelectObject(hdc, hOldFont);
+
+    ReleaseDC(hwnd, hdc);
     break;
   }
   case WM_COMMAND:
@@ -180,9 +286,37 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
   return 0;
 }
 
+FILE* fc;
+void DestroyConsole(){
+  fclose(fc);
+  FreeConsole();
+}
+
+void InitializeConsole(){
+  // Initialize console with stdout/stderr
+  AllocConsole();
+  freopen_s(&fc, "CONOUT$", "w", stdout);
+  freopen_s(&fc, "CONOUT$", "w", stderr);
+
+  //_setmode(_fileno(fc), _O_U8TEXT);
+  // Enable ANSI-Escape codes for colours
+  HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+  DWORD consoleMode;
+
+  GetConsoleMode(consoleHandle, &consoleMode);
+  consoleMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+  SetConsoleMode(consoleHandle, consoleMode);
+  SetConsoleTitleW(L"SDC");
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
-  setlocale(LC_ALL, "en_US.UTF8");
+  setlocale(LC_ALL, "Russian");
+  InitializeConsole();
+  INITCOMMONCONTROLSEX icc;
+  icc.dwSize = sizeof(icc);
+  icc.dwICC = ICC_STANDARD_CLASSES;
+  InitCommonControlsEx(&icc);
 
   WNDCLASSEXW wc = {};
   wc.cbSize = sizeof(WNDCLASSEX);
@@ -210,6 +344,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
   }
 
   ShowWindow(hwnd, nCmdShow);
+
+  SetWindowTheme(hwnd, L"Explorer", NULL);
   UpdateWindow(hwnd);
 
   MSG msg;
