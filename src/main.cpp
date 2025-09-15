@@ -271,7 +271,7 @@ int main(int argc, char const *argv[]) {
 
     string cyrillic_text = ConvertWideToUtf8(wstring((LPTSTR)szWallpaperPath));
 
-    WriteFileS(hRestoreFile, cyrillic_text.c_str(), cyrillic_text.length() * sizeof(char), NULL, NULL);
+    WriteFileS(hRestoreFile, cyrillic_text.c_str(), (DWORD)cyrillic_text.length() * sizeof(char), NULL, NULL);
 
     CloseHandle(hRestoreFile);
 
@@ -340,12 +340,18 @@ int main(int argc, char const *argv[]) {
     }
   }
 
-  ShowWindow(GetConsoleWindow(), SW_HIDE);
+  //ShowWindow(GetConsoleWindow(), SW_HIDE);
 
   HDC hdc = GetDC(hWallpaper);
 
   RECT cr;
   GetClientRect(hWallpaper, &cr);
+
+  float scale = (float)GetDpiForWindow(hWallpaper)/96.0f;
+  cout << "scale: " << scale << endl;
+
+  cr.right = (LONG)round((float)cr.right*scale);
+  cr.bottom = (LONG)round((float)cr.bottom*scale);
 
   //saving original wp hdc
   HDC hdcSRC = CreateCompatibleDC(hdc);
@@ -353,6 +359,14 @@ int main(int argc, char const *argv[]) {
   HANDLE hOldSRC = SelectObject(hdcSRC, hbmSRC);
   BitBlt(hdcSRC, 0, 0, cr.right, cr.bottom, hdc, 0, 0, SRCCOPY);
 
+  HWND hwndDesktop = GetDesktopWindow(); 
+  //cout << "scale: " << ((float)dpi/96.0f) << endl;
+  cout << hWallpaper << endl;
+  cout << hwndDesktop << endl;
+  cout << cr.left << " left "
+      << cr.top << " top "
+      << cr.right << " right "
+      << cr.bottom << " bottom" << endl;
   HDC hdcMem = CreateCompatibleDC(hdc);
   HBITMAP hbmMem = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
   HANDLE hOld = SelectObject(hdcMem, hbmMem);
