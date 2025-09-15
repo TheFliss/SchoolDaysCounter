@@ -3,7 +3,7 @@
 #include <strsafe.h>
 #include <locale>
 
-void DisplayError(LPCTSTR desc) {
+void DisplayError(LPCTSTR desc, UINT uType) {
   LPVOID lpMsgBuf;
   DWORD dw = GetLastError();
 
@@ -23,12 +23,13 @@ void DisplayError(LPCTSTR desc) {
   if (FAILED(StringCchPrintf(
               (LPTSTR)lpDisplayBuf, 
               LocalSize(lpDisplayBuf) / sizeof(TCHAR),
-              xorstr_(TEXT("Function failed with error code %d as follows:\n      %s")),
+              xorstr_(TEXT("%s\n\nFunction failed with error code %d as follows:\n%s")),
+              (LPTSTR)desc,
               dw, lpMsgBuf))) {
     printf(xorstr_("FATAL: Unable to output error code.\n"));
   }
 
-  wprintf_s(xorstr_(TEXT("%s\n      %s\n")), (LPWSTR)desc, (LPWSTR)lpDisplayBuf);
+  MessageBox(nullptr, (LPTSTR)lpDisplayBuf, TEXT("Error"), uType);
 
   LocalFree(lpMsgBuf);
   LocalFree(lpDisplayBuf);
