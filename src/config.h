@@ -25,4 +25,6 @@ struct sdc_config_t {
   vector<timer_t> timers;
 };
 
+sdc_config_t parse_config(fs::path fp);
+
 #endif /* CONFIG_H */
