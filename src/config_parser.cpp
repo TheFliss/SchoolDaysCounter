@@ -191,7 +191,7 @@ sdc_config_t parse_config(fs::path fp){
     sdccstream.close();
   } catch(const exception& e) {
     string errmsg = string("Exception caught while reading config file:\n") + e.what();
-    MessageBoxW(NULL, ConvertUtf8ToWide(errmsg).c_str(), ConvertUtf8ToWide(string("Ошибка")).c_str(), MB_ICONERROR);
+    MessageBoxW(NULL, WideFromUtf8s(errmsg), WideFromUtf8("Ошибка"), MB_ICONERROR);
     exit(1);
   }
   return sdc_config;

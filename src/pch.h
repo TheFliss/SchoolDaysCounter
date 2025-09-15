@@ -9,6 +9,7 @@
 
 #include <Windows.h>
 #include <shlwapi.h>
+#include <shellapi.h>
 //#include <gdiplus.h>
 #include <locale>
 //#include <cstddef>
@@ -41,6 +42,14 @@
 
 using namespace std;
 namespace fs = std::filesystem;
+
+#define ID_BUTTON1 101
+#define ID_BUTTON2 102
+#define ID_BUTTON3 103
+#define ID_TRAY_ICON 104
+#define ID_TRAY_RESTORE 105
+#define ID_TRAY_EXIT 106
+#define WM_TRAYICON (WM_USER + 1)
 
 class FilePath {
 public:

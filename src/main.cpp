@@ -3,7 +3,18 @@
 #include "timer.h"
 #include "util.h"
 
+#pragma comment(linker,"/manifestdependency:\"type='win32' "\
+                   "name='Microsoft.Windows.Common-Controls' "\
+                   "version='6.0.0.0' "\
+                   "processorArchitecture='*' "\
+                   "publicKeyToken='6595b64144ccf1df' "\
+                   "language='*' "\
+                   "\"")
+
 using namespace util;
+
+const wchar_t g_szClassName[] = L"SDCWindowClass";
+NOTIFYICONDATA g_tnd = {};
 
 static void usage(const char *prog){
 
@@ -52,9 +63,166 @@ uint64_t timeStampMil() {
   return duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+void RestoreFromTray(HWND hwnd)
+{
+  ShowWindow(hwnd, SW_SHOW);
+  SetForegroundWindow(hwnd);
+  Shell_NotifyIcon(NIM_DELETE, &g_tnd);
+}
+
+void AddTrayIcon(HWND hwnd)
+{
+  g_tnd.cbSize = sizeof(NOTIFYICONDATA);
+  g_tnd.hWnd = hwnd;
+  g_tnd.uID = ID_TRAY_ICON;
+  g_tnd.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+  g_tnd.uCallbackMessage = WM_TRAYICON;
+  g_tnd.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+  wcscpy_s(g_tnd.szTip, WideFromUtf8("School Days Counter"));
+
+  Shell_NotifyIcon(NIM_ADD, &g_tnd);
+}
+
+void MinimizeToTray(HWND hwnd)
+{
+  ShowWindow(hwnd, SW_HIDE);
+  AddTrayIcon(hwnd);
+}
+
+void ShowTrayMenu(HWND hwnd)
+{
+  POINT pt;
+  GetCursorPos(&pt);
+
+  HMENU hMenu = CreatePopupMenu();
+  if (hMenu)
+  {
+    InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, ID_TRAY_RESTORE, WideFromUtf8("Вернуться в меню"));
+    InsertMenuW(hMenu, 1, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, WideFromUtf8("Выход"));
+    SetForegroundWindow(hwnd);
+
+    TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
+
+    DestroyMenu(hMenu);
+  }
+}
+
+
+LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+  switch (msg)
+  {
+  case WM_CREATE:
+  {
+    CreateWindowW(L"BUTTON", L"1 Button",
+                  WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                  50, 30, 200, 30, hwnd, (HMENU)ID_BUTTON1, NULL, NULL);
+
+    CreateWindowW(WideFromUtf8("BUTTON"), L"2 Button",
+                  WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                  50, 70, 200, 30, hwnd, (HMENU)ID_BUTTON2, NULL, NULL);
+
+    CreateWindowW(L"BUTTON", L"3 Button",
+                  WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                  50, 110, 200, 30, hwnd, (HMENU)ID_BUTTON3, NULL, NULL);
+    break;
+  }
+  case WM_COMMAND:
+  {
+    switch (LOWORD(wParam))
+    {
+    case ID_BUTTON1:
+      MessageBoxW(hwnd, L"Нажата кнопка 1", L"Информация", MB_OK);
+      break;
+    case ID_BUTTON2:
+      MessageBoxW(hwnd, L"Нажата кнопка 2", L"Информация", MB_OK);
+      break;
+    case ID_BUTTON3:
+      MinimizeToTray(hwnd);
+      break;
+    case ID_TRAY_RESTORE:
+      RestoreFromTray(hwnd);
+      break;
+    case ID_TRAY_EXIT:
+      PostMessage(hwnd, WM_CLOSE, 0, 0);
+      break;
+    }
+    break;
+  }
+  case WM_SIZE:
+    if (wParam == SIZE_MINIMIZED)
+    {
+      MinimizeToTray(hwnd);
+      return 0;
+    }
+    break;
+  case WM_CLOSE:
+    DestroyWindow(hwnd);
+    break;
+  case WM_DESTROY:
+    Shell_NotifyIcon(NIM_DELETE, &g_tnd);
+    PostQuitMessage(0);
+    break;
+  case WM_TRAYICON:
+    switch (LOWORD(lParam))
+    {
+    case WM_LBUTTONUP:
+      RestoreFromTray(hwnd);
+      break;
+    case WM_RBUTTONUP:
+      ShowTrayMenu(hwnd);
+      break;
+    }
+    break;
+  default:
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+  }
+  return 0;
+}
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
+{
+  setlocale(LC_ALL, "en_US.UTF8");
+
+  WNDCLASSEXW wc = {};
+  wc.cbSize = sizeof(WNDCLASSEX);
+  wc.lpfnWndProc = WndProc;
+  wc.hInstance = hInstance;
+  wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+  wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+  wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+  wc.lpszClassName = g_szClassName;
+
+  if (!RegisterClassExW(&wc))
+  {
+    MessageBoxW(NULL, WideFromUtf8("Ошибка регистрации окна!"), WideFromUtf8("Ошибка"), MB_ICONERROR);
+    return 0;
+  }
+
+  HWND hwnd = CreateWindowExW(0, g_szClassName, WideFromUtf8("School Days Counter"),
+                              WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
+                              CW_USEDEFAULT, CW_USEDEFAULT, 300, 200, NULL, NULL, hInstance, NULL);
+
+  if (!hwnd)
+  {
+    MessageBoxW(NULL, WideFromUtf8("Ошибка создания окна!"), WideFromUtf8("Ошибка"), MB_ICONERROR);
+    return 0;
+  }
+
+  ShowWindow(hwnd, nCmdShow);
+  UpdateWindow(hwnd);
+
+  MSG msg;
+  while (GetMessage(&msg, NULL, 0, 0))
+  {
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
+  }
+
+  return (int)msg.wParam;
+}
+
 int main(int argc, char const *argv[]) {
-  setlocale(LC_ALL, "Russian");
-  SetConsoleOutputCP(866);
 
   bool restore = false;
   FilePath SDCConfigFile = FilePath(getexepath() / "sdc_config.json");

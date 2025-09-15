@@ -3,6 +3,9 @@
 
 #include "pch.h"
 
+#define WideFromUtf8s(x) (LPCWSTR)ConvertUtf8ToWide(x).c_str()
+#define WideFromUtf8(x) (LPCWSTR)ConvertUtf8ToWide(string(x)).c_str()
+
 namespace util {
   extern fs::path getexepath();
 

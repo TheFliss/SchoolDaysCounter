@@ -24,7 +24,7 @@ file(GLOB_RECURSE ${PROJECT_NAME}_All
   ${SRC}/src/*.rc
 )
 
-add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_All})
+add_executable(${PROJECT_NAME} WIN32 ${${PROJECT_NAME}_All})
 set_property(TARGET ${PROJECT_NAME} PROPERTY
   MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
