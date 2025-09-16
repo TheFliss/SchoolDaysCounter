@@ -14,12 +14,12 @@
 using namespace util;
 
 const wchar_t g_szClassName[] = L"SDCWindowClass";
+static bool g_exitFromThread = false;
 NOTIFYICONDATA g_tnd = {};
 
 struct sdc_thread_vars_t {
-  HANDLE hMutex;
   HWND hwnd;
-  LPTSTR lpConfigPath;
+  BOOL Minimize = 0;
 };
 
 static void usage(const char *prog){
@@ -307,7 +307,7 @@ LPTSTR GetRegistrySZValue(HKEY hKeyParent, LPCWSTR subkey, LPCWSTR valueName) {
 void RestoreFromTray(HWND hwnd, HANDLE hThread)
 {
   if(hThread != NULL)
-    TerminateThread(hThread, 0);
+    g_exitFromThread = true;//TerminateThread(hThread, 0);
   resetWallpaperWindow();
   ShowWindow(hwnd, SW_SHOWNORMAL);
   SetForegroundWindow(hwnd);
@@ -430,7 +430,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
       cout << "Read from registry: " << rRunInTrayFlag << endl;
     RECT dWnd;
     GetClientRect(hwnd, &dWnd);
-    cout << dWnd << endl;
+    //cout << dWnd << endl;
     HDC hdc = GetDC(hwnd);
     NONCLIENTMETRICS metrics = {};
     metrics.cbSize = sizeof(metrics);
@@ -442,7 +442,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     HWND hStatusBar = DoCreateStatusBar(hwnd);
     RECT dStatusBar;
     GetClientRect(hStatusBar, &dStatusBar);
-    cout << dStatusBar << endl;
+    //cout << dStatusBar << endl;
     int dWhndHalf = (dWnd.right-15)/2;
     CreateWindowW(WC_BUTTON, WideFromUtf8("Обновить конфиг"),
                   WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
@@ -482,6 +482,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     SelectObject(hdc, hOldFont);
 
     ReleaseDC(hwnd, hdc);
+    if(rRunInTrayFlag){
+      sdc_thread_vars_t* threadParams = new sdc_thread_vars_t(
+        hwnd,
+        FALSE
+      );
+      g_exitFromThread = false;
+      hThread = CreateThread(NULL, 0, &MainSDCThreadProc, threadParams, 0, NULL);
+      delete[] threadParams;
+    }
     break;
   }
   case WM_COMMAND:
@@ -509,13 +518,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
       break;
     case ID_BUTTON3:
     {
+      DWORD dwExitCode;
+      if(hThread != NULL
+         && GetExitCodeThread(hThread, &dwExitCode)){
+        if(dwExitCode == STILL_ACTIVE){
+          MinimizeToTray(hwnd);
+          break;
+        }
+      }
       sdc_thread_vars_t* threadParams = new sdc_thread_vars_t(
-        hMutex,
         hwnd,
-        GetRegistrySZValue(HKEY_CURRENT_USER, wndSubKey, configPathValueName)
+        TRUE
       );
+      g_exitFromThread = false;
       hThread = CreateThread(NULL, 0, &MainSDCThreadProc, threadParams, 0, NULL);
-      LocalFree(threadParams->lpConfigPath);
       delete[] threadParams;
       break;
     }
@@ -705,14 +721,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   sdc_thread_vars_t *threadParams = (sdc_thread_vars_t*)lpParam;
-  LPTSTR lpConfig = (LPTSTR)threadParams->lpConfigPath;
+  LPTSTR lpConfig = NULL;
+  {
+    static LPCWSTR wndSubKey = L"SOFTWARE\\SchoolDaysCounter";
+    static LPCWSTR configPathValueName = L"ConfigPath";
+    if(CheckRegistryValue(HKEY_CURRENT_USER, wndSubKey, configPathValueName, REG_SZ)){
+      lpConfig = GetRegistrySZValue(HKEY_CURRENT_USER, wndSubKey, configPathValueName);
+    }
+  }
+  //cout << (LPVOID)lpConfig << endl;
+  //MessageBox(NULL, lpConfig, L"Lol", MB_OK);
   DWORD i;
   HWND hWallpaper = FindWallpaperWindow();
   if (!hWallpaper) {
     MessageBox(nullptr, L"Не удалось найти окно обоев", L"Ошибка", MB_ICONERROR);
-    LocalFree(lpConfig);
+    //RestoreFromTray(threadParams->hwnd, NULL);
     ExitThread(1);
   }
+
+  resetWallpaperWindow();
 
   vector<unique_ptr<Timer>> timers;
 
@@ -728,7 +755,7 @@ DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   } catch(const exception& e) {
     string errmsg = string("Exception caught while reading config file:\n") + e.what();
     MessageBoxW(NULL, WideFromUtf8s(errmsg), WideFromUtf8("Ошибка"), MB_ICONERROR);
-    LocalFree(lpConfig);
+    //RestoreFromTray(threadParams->hwnd, NULL);
     ExitThread(1);
   }
 
@@ -761,8 +788,12 @@ DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   HBITMAP hbmMem = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
   HANDLE hOld = SelectObject(hdcMem, hbmMem);
 
-  MinimizeToTray(threadParams->hwnd);
+  if(threadParams->Minimize)
+    MinimizeToTray(threadParams->hwnd);
   while(1){
+    if(g_exitFromThread){
+      break;
+    }
     BitBlt(hdcMem, 0, 0, cr.right, cr.bottom, hdcSRC, 0, 0, SRCCOPY);
     for(auto &x : timers)
       x->render(hdcMem, &cr);
@@ -781,162 +812,163 @@ DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   DeleteDC (hdcSRC);
 
   ReleaseDC(hWallpaper, hdc);
-  LocalFree(lpConfig);
+  //RestoreFromTray(threadParams->hwnd, NULL);
+  //LocalFree(lpConfig);
   ExitThread(0);
 }
 
-int main(int argc, char const *argv[]) {
+//int main(int argc, char const *argv[]) {
 
-  bool restore = false;
-  FilePath SDCConfigFile = FilePath(getexepath() / "sdc_config.json");
+//  bool restore = false;
+//  FilePath SDCConfigFile = FilePath(getexepath() / "sdc_config.json");
 
-  for (int i = 1; i < argc; i++) {
-    try
-    {
-      if(strcmp(argv[i], xorstr_("-config-path")) == 0){
-        test_arg(i, argc, argv[i]);
-        SDCConfigFile = FilePath(string(argv[i+1]));
-        i++;
-      }else 
-      if(strcmp(argv[i], xorstr_("-restore")) == 0 || strcmp(argv[i], xorstr_("-r")) == 0){
-        restore = true;
-      }else{
-        if(strcmp(argv[i], xorstr_("-help")) != 0) printf_s(xorstr_("\nERROR: Unknown argument %s\n"), argv[i]);
-        usage(argv[0]);
-        exit(1);
-      }
-    }
-    catch(const exception& e)
-    {
-      cerr << "\nException caught while parsing argument \"" << argv[i] << "\": " << e.what() << endl;
-        usage(argv[0]);
-      return EXIT_FAILURE;
-    }
-  }
+//  for (int i = 1; i < argc; i++) {
+//    try
+//    {
+//      if(strcmp(argv[i], xorstr_("-config-path")) == 0){
+//        test_arg(i, argc, argv[i]);
+//        SDCConfigFile = FilePath(string(argv[i+1]));
+//        i++;
+//      }else 
+//      if(strcmp(argv[i], xorstr_("-restore")) == 0 || strcmp(argv[i], xorstr_("-r")) == 0){
+//        restore = true;
+//      }else{
+//        if(strcmp(argv[i], xorstr_("-help")) != 0) printf_s(xorstr_("\nERROR: Unknown argument %s\n"), argv[i]);
+//        usage(argv[0]);
+//        exit(1);
+//      }
+//    }
+//    catch(const exception& e)
+//    {
+//      cerr << "\nException caught while parsing argument \"" << argv[i] << "\": " << e.what() << endl;
+//        usage(argv[0]);
+//      return EXIT_FAILURE;
+//    }
+//  }
 
-  FilePath restoreFile = FilePath(getexepath() / "original_path.txt");
+//  FilePath restoreFile = FilePath(getexepath() / "original_path.txt");
 
-  //DEPRECATED
-  if(!PathFileExistsA(restoreFile.fp_s.c_str())){
-    wchar_t *szWallpaperPath[MAX_PATH];
-    FunctionHandlerL(!SystemParametersInfo(SPI_GETDESKWALLPAPER, MAX_PATH, szWallpaperPath, 0), "SDC", "Cannot get current wallpaper path");
+//  //DEPRECATED
+//  if(!PathFileExistsA(restoreFile.fp_s.c_str())){
+//    wchar_t *szWallpaperPath[MAX_PATH];
+//    FunctionHandlerL(!SystemParametersInfo(SPI_GETDESKWALLPAPER, MAX_PATH, szWallpaperPath, 0), "SDC", "Cannot get current wallpaper path");
 
-    //Writing restore file
-    HANDLE hRestoreFile = CreateFileA(restoreFile.fp_s.c_str(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+//    //Writing restore file
+//    HANDLE hRestoreFile = CreateFileA(restoreFile.fp_s.c_str(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
 
-    HandleCreateFileSD(hRestoreFile, restoreFile.fp_s.c_str());
+//    HandleCreateFileSD(hRestoreFile, restoreFile.fp_s.c_str());
 
-    string cyrillic_text = ConvertWideToUtf8(wstring((LPTSTR)szWallpaperPath));
+//    string cyrillic_text = ConvertWideToUtf8(wstring((LPTSTR)szWallpaperPath));
 
-    WriteFileS(hRestoreFile, cyrillic_text.c_str(), (DWORD)cyrillic_text.length() * sizeof(char), NULL, NULL);
+//    WriteFileS(hRestoreFile, cyrillic_text.c_str(), (DWORD)cyrillic_text.length() * sizeof(char), NULL, NULL);
 
-    CloseHandle(hRestoreFile);
+//    CloseHandle(hRestoreFile);
 
-#ifdef DEBUG
-    wprintf_s(xorstr_(TEXT("%s\n")), (LPTSTR)szWallpaperPath);
-#endif
-  }
+//#ifdef DEBUG
+//    wprintf_s(xorstr_(TEXT("%s\n")), (LPTSTR)szWallpaperPath);
+//#endif
+//  }
 
-  if(restore){
-    printf_s(xorstr_("\nRestoring orginal wallpaper\n"));
-    HANDLE hRestoreFile = CreateFileA(restoreFile.fp_s.c_str(), GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-    HandleCreateFileSD(hRestoreFile, restoreFile.fp_s.c_str());
+//  if(restore){
+//    printf_s(xorstr_("\nRestoring orginal wallpaper\n"));
+//    HANDLE hRestoreFile = CreateFileA(restoreFile.fp_s.c_str(), GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+//    HandleCreateFileSD(hRestoreFile, restoreFile.fp_s.c_str());
 
-    DWORD size = GetFileSize(hRestoreFile, NULL);
-    PVOID virtualpointer = VirtualAlloc(NULL, size, MEM_COMMIT, PAGE_READWRITE);
+//    DWORD size = GetFileSize(hRestoreFile, NULL);
+//    PVOID virtualpointer = VirtualAlloc(NULL, size, MEM_COMMIT, PAGE_READWRITE);
 
-    ReadFileS(hRestoreFile, virtualpointer, size, NULL, NULL);
+//    ReadFileS(hRestoreFile, virtualpointer, size, NULL, NULL);
 
-    wstring cyrillic_text = ConvertUtf8ToWide(string((LPCSTR)virtualpointer));
+//    wstring cyrillic_text = ConvertUtf8ToWide(string((LPCSTR)virtualpointer));
 
-    FunctionHandlerL(!SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, (LPVOID)cyrillic_text.c_str(), SPIF_UPDATEINIFILE), "SDC", "Cannot set wallpaper path");
-#ifdef DEBUG
-    wprintf_s(xorstr_(TEXT("%s\n")), cyrillic_text.c_str());
-#endif
+//    FunctionHandlerL(!SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, (LPVOID)cyrillic_text.c_str(), SPIF_UPDATEINIFILE), "SDC", "Cannot set wallpaper path");
+//#ifdef DEBUG
+//    wprintf_s(xorstr_(TEXT("%s\n")), cyrillic_text.c_str());
+//#endif
 
-    CloseHandle(hRestoreFile);
-    return 0;
-  }
+//    CloseHandle(hRestoreFile);
+//    return 0;
+//  }
 
-  LPTSTR szWallpaperPath[MAX_PATH];
-  FunctionHandlerL(!SystemParametersInfo(SPI_GETDESKWALLPAPER, MAX_PATH, szWallpaperPath, 0), "SDC", "Cannot get current wallpaper path");
-  FunctionHandlerL(!SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, szWallpaperPath, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE), "SDC", "Cannot set wallpaper path");
+//  LPTSTR szWallpaperPath[MAX_PATH];
+//  FunctionHandlerL(!SystemParametersInfo(SPI_GETDESKWALLPAPER, MAX_PATH, szWallpaperPath, 0), "SDC", "Cannot get current wallpaper path");
+//  FunctionHandlerL(!SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, szWallpaperPath, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE), "SDC", "Cannot set wallpaper path");
 
-  HWND hWallpaper = FindWallpaperWindow();
-  if (!hWallpaper) {
-    MessageBox(nullptr, L"Не удалось найти окно обоев", L"Ошибка", MB_ICONERROR);
-    return 1;
-  }
+//  HWND hWallpaper = FindWallpaperWindow();
+//  if (!hWallpaper) {
+//    MessageBox(nullptr, L"Не удалось найти окно обоев", L"Ошибка", MB_ICONERROR);
+//    return 1;
+//  }
 
-  vector<unique_ptr<Timer>> timers;
+//  vector<unique_ptr<Timer>> timers;
 
-  sdc_config_t sdc_config = parse_config(SDCConfigFile.fp);
+//  sdc_config_t sdc_config = parse_config(SDCConfigFile.fp);
 
-  if(sdc_config.update_delay < 1){
-    printf_s(xorstr_("\nERROR: Update time must be greater than 0\n"));
-    usage(argv[0]);
-    return EXIT_FAILURE;
-  }
+//  if(sdc_config.update_delay < 1){
+//    printf_s(xorstr_("\nERROR: Update time must be greater than 0\n"));
+//    usage(argv[0]);
+//    return EXIT_FAILURE;
+//  }
 
-  {
-    for(auto &x : sdc_config.timers){
-      Timer current_timer(x);
-      timers.push_back(make_unique<Timer>(current_timer));
-    }
-  }
+//  {
+//    for(auto &x : sdc_config.timers){
+//      Timer current_timer(x);
+//      timers.push_back(make_unique<Timer>(current_timer));
+//    }
+//  }
 
-  //ShowWindow(GetConsoleWindow(), SW_HIDE);
+//  //ShowWindow(GetConsoleWindow(), SW_HIDE);
 
-  HDC hdc = GetDC(hWallpaper);
+//  HDC hdc = GetDC(hWallpaper);
 
-  RECT cr;
-  GetClientRect(hWallpaper, &cr);
+//  RECT cr;
+//  GetClientRect(hWallpaper, &cr);
 
-  float scale = (float)GetDpiForWindow(hWallpaper)/96.0f;
-  cout << "scale: " << scale << endl;
+//  float scale = (float)GetDpiForWindow(hWallpaper)/96.0f;
+//  cout << "scale: " << scale << endl;
 
-  cr.right = (LONG)round((float)cr.right*scale);
-  cr.bottom = (LONG)round((float)cr.bottom*scale);
+//  cr.right = (LONG)round((float)cr.right*scale);
+//  cr.bottom = (LONG)round((float)cr.bottom*scale);
 
-  //saving original wp hdc
-  HDC hdcSRC = CreateCompatibleDC(hdc);
-  HBITMAP hbmSRC = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
-  HANDLE hOldSRC = SelectObject(hdcSRC, hbmSRC);
-  BitBlt(hdcSRC, 0, 0, cr.right, cr.bottom, hdc, 0, 0, SRCCOPY);
+//  //saving original wp hdc
+//  HDC hdcSRC = CreateCompatibleDC(hdc);
+//  HBITMAP hbmSRC = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
+//  HANDLE hOldSRC = SelectObject(hdcSRC, hbmSRC);
+//  BitBlt(hdcSRC, 0, 0, cr.right, cr.bottom, hdc, 0, 0, SRCCOPY);
 
-  HWND hwndDesktop = GetDesktopWindow(); 
-  //cout << "scale: " << ((float)dpi/96.0f) << endl;
-  cout << hWallpaper << endl;
-  cout << hwndDesktop << endl;
-  cout << cr.left << " left "
-      << cr.top << " top "
-      << cr.right << " right "
-      << cr.bottom << " bottom" << endl;
-  HDC hdcMem = CreateCompatibleDC(hdc);
-  HBITMAP hbmMem = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
-  HANDLE hOld = SelectObject(hdcMem, hbmMem);
+//  HWND hwndDesktop = GetDesktopWindow(); 
+//  //cout << "scale: " << ((float)dpi/96.0f) << endl;
+//  cout << hWallpaper << endl;
+//  cout << hwndDesktop << endl;
+//  cout << cr.left << " left "
+//      << cr.top << " top "
+//      << cr.right << " right "
+//      << cr.bottom << " bottom" << endl;
+//  HDC hdcMem = CreateCompatibleDC(hdc);
+//  HBITMAP hbmMem = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
+//  HANDLE hOld = SelectObject(hdcMem, hbmMem);
 
-  while(1){
-    BitBlt(hdcMem, 0, 0, cr.right, cr.bottom, hdcSRC, 0, 0, SRCCOPY);
-    for(auto &x : timers)
-      x->render(hdcMem, &cr);
+//  while(1){
+//    BitBlt(hdcMem, 0, 0, cr.right, cr.bottom, hdcSRC, 0, 0, SRCCOPY);
+//    for(auto &x : timers)
+//      x->render(hdcMem, &cr);
 
-    BitBlt(hdc, 0, 0, cr.right, cr.bottom, hdcMem, 0, 0, SRCCOPY);
-    Sleep(sdc_config.update_delay);
-  }
+//    BitBlt(hdc, 0, 0, cr.right, cr.bottom, hdcMem, 0, 0, SRCCOPY);
+//    Sleep(sdc_config.update_delay);
+//  }
 
-  BitBlt(hdc, 0, 0, cr.right, cr.bottom, hdcSRC, 0, 0, SRCCOPY);
-  SelectObject(hdcMem, hOld);
-  SelectObject(hdcSRC, hOldSRC);
+//  BitBlt(hdc, 0, 0, cr.right, cr.bottom, hdcSRC, 0, 0, SRCCOPY);
+//  SelectObject(hdcMem, hOld);
+//  SelectObject(hdcSRC, hOldSRC);
 
-  DeleteObject(hbmMem);
-  DeleteDC (hdcMem);
-  DeleteObject(hbmSRC);
-  DeleteDC (hdcSRC);
+//  DeleteObject(hbmMem);
+//  DeleteDC (hdcMem);
+//  DeleteObject(hbmSRC);
+//  DeleteDC (hdcSRC);
 
-  ReleaseDC(hWallpaper, hdc);
+//  ReleaseDC(hWallpaper, hdc);
 
-  return 0;
-}
+//  return 0;
+//}
 
 #pragma endregion

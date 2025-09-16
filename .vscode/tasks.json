@@ -6,7 +6,7 @@
         {
             "label": "Build SDC",
             "type": "shell",
-            "command": "./build.cmd Debug b; echo Done!",
+            "command": "./build.cmd Release b; echo Done!",
             "problemMatcher": [],
             "group": {
                 "kind": "build",
