@@ -81,9 +81,9 @@ void Timer::render(HDC hdc, RECT *cr) {
 
   SetTextColor(hdc, RGB(255, 255, 255));
 
-  #ifdef DEBUG
-  cout << "rendered: " << ConvertWideToANSI(ConvertUtf8ToWide(text)) << endl;
-  #endif
+  //#ifdef DEBUG
+  //cout << "rendered: " << ConvertWideToANSI(ConvertUtf8ToWide(text)) << endl;
+  //#endif
   time_t timestamp_now = time(&timestamp_now);
   tm st = *localtime(&timestamp_now);
 

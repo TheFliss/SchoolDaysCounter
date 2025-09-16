@@ -1,11 +1,8 @@
 
 #include "config.h"
-#include "json/json.hpp"
 #include "util.h"
 
 using namespace util;
-
-using json = nlohmann::json;
 
 void check_unknown_keys(const json& j, const set<string>& known_keys) {
   for (auto it = j.begin(); it != j.end(); ++it) {

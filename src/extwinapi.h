@@ -17,6 +17,11 @@ void DisplayError(LPCTSTR desc, UINT uType);
   exit(1);\
 }
 
+#define FunctionHandlerR(cond, desc, cont) if (cond) {\
+  DisplayError(xorstr_(TEXT(desc)), MB_ICONERROR);\
+  cont;\
+}
+
 #define FunctionHandlerD(cond, desc, file) if (cond) {\
   TCHAR buffer[128]{};\
   _snwprintf_s(buffer, 128, xorstr_(L"%s: %s"), file, xorstr_(TEXT(desc)));\
@@ -43,6 +48,8 @@ void DisplayError(LPCTSTR desc, UINT uType);
 #define HandleGetFilePointerS(hnd) FunctionHandler(hnd == INVALID_SET_FILE_POINTER, "Could not get file pointer")
 #define HandleWriteFileS(hnd) FunctionHandler(!hnd, "Could not write file")
 #define HandleReadFileS(hnd) FunctionHandler(!hnd, "Could not read file")
+#define HandleRegOpenKeyExAS(hnd) FunctionHandler(hnd, "Could not open registry key")
+#define HandleRegOpenKeyExWS(hnd) FunctionHandler(hnd, "Could not open registry key")
 #define HandleCreateFileS(hnd) FunctionHandler(hnd == INVALID_HANDLE_VALUE, "Could not open file")
 #define HandleCreateFileSD(hnd, file) FunctionHandlerD(hnd == INVALID_HANDLE_VALUE, "Could not open file", file)
 #define HandleSetConsoleTextAttributeS(hnd) FunctionHandler(!hnd, "Could not set console attributes")
@@ -52,5 +59,6 @@ void DisplayError(LPCTSTR desc, UINT uType);
 #define ReadFileS(...) hndFunc(ReadFile, __VA_ARGS__)
 #define WriteFileS(...) hndFunc(WriteFile, __VA_ARGS__)
 #define SetConsoleTextAttributeS(...) hndFunc(SetConsoleTextAttribute, __VA_ARGS__)
+#define RegOpenKeyExS(...) hndFunc(RegOpenKeyEx, __VA_ARGS__)
 
 #endif

@@ -1,5 +1,8 @@
 #ifndef RCFILE_H
 #define RCFILE_H
+#include "resource.h"
+
+IDI_APPICON ICON L"Clock-48x48.ico"
 
 #include <windows.h>
 LANGUAGE LANG_RUSSIAN, SUBLANG_ENGLISH_US

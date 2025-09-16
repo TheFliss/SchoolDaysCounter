@@ -16,6 +16,12 @@ using namespace util;
 const wchar_t g_szClassName[] = L"SDCWindowClass";
 NOTIFYICONDATA g_tnd = {};
 
+struct sdc_thread_vars_t {
+  HANDLE hMutex;
+  HWND hwnd;
+  LPTSTR lpConfigPath;
+};
+
 static void usage(const char *prog){
 
   vector<string> message{
@@ -37,6 +43,12 @@ static void test_arg(int i, int argc, const char *argv){
   }
 }
 
+void resetWallpaperWindow(){
+  LPTSTR szWallpaperPath[MAX_PATH];
+  FunctionHandlerL(!SystemParametersInfo(SPI_GETDESKWALLPAPER, MAX_PATH, szWallpaperPath, 0), "SDC", "Cannot get current wallpaper path");
+  FunctionHandlerL(!SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, szWallpaperPath, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE), "SDC", "Cannot set wallpaper path");
+}
+
 HWND FindWallpaperWindow() {
   HWND hProgman = FindWindow(TEXT("ProgMan"), nullptr);
   if (!hProgman) return nullptr;
@@ -45,9 +57,9 @@ HWND FindWallpaperWindow() {
 
   HWND hWallpaperWnd = nullptr;
   EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
-    if (FindWindowEx(hwnd, nullptr, L"SHELLDLL_DefView", nullptr)) {
+    if (FindWindowEx(hwnd, nullptr, TEXT("SHELLDLL_DefView"), nullptr)) {
       HWND* result = reinterpret_cast<HWND*>(lParam);
-      *result = FindWindowEx(nullptr, hwnd, L"WorkerW", nullptr);
+      *result = FindWindowEx(nullptr, hwnd, TEXT("WorkerW"), nullptr);
       return FALSE;
     }
     return TRUE;
@@ -63,10 +75,243 @@ uint64_t timeStampMil() {
   return duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-void RestoreFromTray(HWND hwnd)
+
+#pragma region Registry
+
+BOOL CreateRegistryKey(HKEY hKeyParent, LPCWSTR subkey) {
+  HKEY hKey;
+  DWORD dwDisposition; // Indicates if the key was created or opened
+  LONG lResult = RegCreateKeyExW(
+    hKeyParent,
+    subkey,
+    0,
+    NULL,
+    REG_OPTION_NON_VOLATILE,
+    KEY_ALL_ACCESS,
+    NULL,
+    &hKey,
+    &dwDisposition
+  );
+
+  FunctionHandlerR(lResult, "Error creating or opening registry key", {
+    return FALSE;
+  });
+  RegCloseKey(hKey); // Close the handle
+  return TRUE;
+}
+
+// Function to check the value in the registry
+BOOL CheckRegistryValue(HKEY hKeyParent, LPCWSTR subkey, LPCWSTR valueName, DWORD qType) {
+  HKEY hKey;
+  LONG lResult = RegOpenKeyExW(
+    hKeyParent,
+    subkey,
+    0,
+    KEY_QUERY_VALUE,
+    &hKey
+  );
+
+  if(lResult != ERROR_SUCCESS) {
+    return FALSE;
+  }
+
+  DWORD dwType;
+  DWORD dwSize = 0;
+  lResult = RegQueryValueExW(
+    hKey,
+    valueName,
+    NULL,
+    &dwType,
+    NULL,
+    &dwSize
+  );
+
+  if(lResult != ERROR_SUCCESS || dwType != qType){
+    RegCloseKey(hKey);
+    return FALSE;
+  };
+
+  RegCloseKey(hKey);
+  return TRUE;
+}
+
+// Function to set a dword value in the registry
+BOOL SetRegistryDWValue(HKEY hKeyParent, LPCWSTR subkey, LPCWSTR valueName, DWORD data) {
+  HKEY hKey;
+  LONG lResult = RegOpenKeyExW(
+    hKeyParent,
+    subkey,
+    0,
+    KEY_SET_VALUE,
+    &hKey
+  );
+
+  FunctionHandlerR(lResult, "Error opening registry key for setting value", {
+    return FALSE;
+  });
+
+  lResult = RegSetValueExW(
+    hKey,
+    valueName,
+    0,
+    REG_DWORD,
+    (BYTE *) &data, sizeof(data)
+  );
+
+  FunctionHandlerR(lResult, "Error setting registry value", {
+    RegCloseKey(hKey);
+    return FALSE;
+  });
+
+  RegCloseKey(hKey);
+  return TRUE;
+}
+
+// Function to read a string value from the registry
+DWORD GetRegistryDWValue(HKEY hKeyParent, LPCWSTR subkey, LPCWSTR valueName) {
+  HKEY hKey;
+  LONG lResult = RegOpenKeyExW(
+    hKeyParent,
+    subkey,
+    0,
+    KEY_QUERY_VALUE,
+    &hKey
+  );
+
+  FunctionHandlerR(lResult, "Error opening registry key for querying value", {
+    return 0;
+  });
+
+  DWORD dwType;
+  DWORD dwSize = 0;
+  lResult = RegQueryValueExW(
+    hKey,
+    valueName,
+    NULL,
+    &dwType,
+    NULL,
+    &dwSize
+  );
+
+  FunctionHandlerR(lResult != ERROR_SUCCESS || dwType != REG_DWORD, "Error querying registry value size or type mismatch", {
+    RegCloseKey(hKey);
+    return 0;
+  });
+
+  DWORD dwValueData;
+  lResult = RegQueryValueExW(
+    hKey,
+    valueName,
+    NULL,
+    &dwType,
+    (LPBYTE)&dwValueData,
+    &dwSize
+  );
+
+  FunctionHandlerR(lResult, "Error Error reading registry value", {
+    RegCloseKey(hKey);
+    return 0;
+  });
+
+  RegCloseKey(hKey);
+  return dwValueData;
+}
+
+// Function to set a string value in the registry
+BOOL SetRegistrySZValue(HKEY hKeyParent, LPCWSTR subkey, LPCWSTR valueName, LPCWSTR data) {
+  HKEY hKey;
+  LONG lResult = RegOpenKeyExW(
+    hKeyParent,
+    subkey,
+    0,
+    KEY_SET_VALUE,
+    &hKey
+  );
+
+  FunctionHandlerR(lResult, "Error opening registry key for setting value", {
+    return FALSE;
+  });
+
+  lResult = RegSetValueExW(
+    hKey,
+    valueName,
+    0,
+    REG_SZ,
+    (LPBYTE)data,
+    (wcslen(data) + 1) * sizeof(wchar_t)
+  );
+
+  FunctionHandlerR(lResult, "Error setting registry value", {
+    RegCloseKey(hKey);
+    return FALSE;
+  });
+
+  RegCloseKey(hKey);
+  return TRUE;
+}
+
+// Function to read a string value from the registry
+LPTSTR GetRegistrySZValue(HKEY hKeyParent, LPCWSTR subkey, LPCWSTR valueName) {
+  HKEY hKey;
+  LONG lResult = RegOpenKeyExW(
+    hKeyParent,
+    subkey,
+    0,
+    KEY_QUERY_VALUE,
+    &hKey
+  );
+
+  FunctionHandlerR(lResult, "Error opening registry key for querying value", {
+    return NULL;
+  });
+
+  DWORD dwType;
+  DWORD dwSize = 0;
+  lResult = RegQueryValueExW(
+    hKey,
+    valueName,
+    NULL,
+    &dwType,
+    NULL,
+    &dwSize
+  );
+
+  FunctionHandlerR(lResult != ERROR_SUCCESS || dwType != REG_SZ, "Error querying registry value size or type mismatch", {
+    RegCloseKey(hKey);
+    return NULL;
+  });
+
+  HLOCAL lpDataBuf = LocalAlloc(LMEM_ZEROINIT, (dwSize * sizeof(TCHAR)));
+  lResult = RegQueryValueExW(
+    hKey,
+    valueName,
+    NULL,
+    &dwType,
+    (LPBYTE)lpDataBuf,
+    &dwSize
+  );
+
+  FunctionHandlerR(lResult, "Error Error reading registry value", {
+    RegCloseKey(hKey);
+    return NULL;
+  });
+
+  RegCloseKey(hKey);
+  return (LPTSTR)lpDataBuf;
+}
+
+#pragma endregion
+
+#pragma region Window GUI
+
+void RestoreFromTray(HWND hwnd, HANDLE hThread)
 {
-  ShowWindow(hwnd, SW_SHOW);
+  if(hThread != NULL)
+    TerminateThread(hThread, 0);
+  resetWallpaperWindow();
+  ShowWindow(hwnd, SW_SHOWNORMAL);
   SetForegroundWindow(hwnd);
+  SetActiveWindow(hwnd);
   Shell_NotifyIcon(NIM_DELETE, &g_tnd);
 }
 
@@ -77,7 +322,7 @@ void AddTrayIcon(HWND hwnd)
   g_tnd.uID = ID_TRAY_ICON;
   g_tnd.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
   g_tnd.uCallbackMessage = WM_TRAYICON;
-  g_tnd.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+  g_tnd.hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APPICON));
   wcscpy_s(g_tnd.szTip, WideFromUtf8("School Days Counter"));
 
   Shell_NotifyIcon(NIM_ADD, &g_tnd);
@@ -126,60 +371,66 @@ operator<<(std::ostream& os, const LOGFONTW& x)
   wcout << x.lfFaceName << " lfFaceName\n";
   return os;
 }
+std::ostream&
+operator<<(std::ostream& os, const RECT& x);
 
-HWND DoCreateStatusBar(HWND hwndParent, int idStatus)
+HWND DoCreateStatusBar(HWND hwnd)
 {
-  HWND hwndStatus;
-  RECT rcClient;
-  HLOCAL hloc;
-  PINT paParts;
-  int i, nWidth;
+  HWND hwndStatus = CreateWindow(STATUSCLASSNAME, (PCTSTR)NULL,
+                WS_CHILD | WS_VISIBLE,
+                0, 0, 0, 0, hwnd, (HMENU)NULL, NULL, NULL);
 
-  // Create the status bar.
-  hwndStatus = CreateWindowEx(
-      0,                       // no extended styles
-      STATUSCLASSNAME,         // name of status bar class
-      (PCTSTR) NULL,           // no text when first created
-      WS_CHILD | WS_VISIBLE,   // creates a visible child window
-      0, 0, 0, 0,              // ignores size and position
-      hwndParent,              // handle to parent window
-      (HMENU) idStatus,       // child window identifier
-      NULL,                   // handle to application instance
-      NULL);                   // no window creation data
-
-  // Get the coordinates of the parent window's client area.
-  GetClientRect(hwndParent, &rcClient);
-
-  // Allocate an array for holding the right edge coordinates.
-  hloc = LocalAlloc(LHND, sizeof(int) * 3);
-  paParts = (PINT) LocalLock(hloc);
-  paParts[0] = 1;
-  paParts[1] = 78;
-  paParts[2] = -1;
-  //// Calculate the right edge coordinate for each part, and
-  //// copy the coordinates to the array.
-  //nWidth = rcClient.right / cParts;
-  //int rightEdge = nWidth;
-  //for (i = 0; i < cParts; i++) { 
-  //    paParts[i] = rightEdge;
-  //    rightEdge += nWidth;
-  //}
-
-  // Tell the status bar to create the window parts.
+  INT paParts[3] = {1, 78, -1};
   SendMessage(hwndStatus, SB_SETPARTS, (WPARAM)3, (LPARAM)
               paParts);
 
-  // Free the array, and return.
-  LocalUnlock(hloc);
-  LocalFree(hloc);
   return hwndStatus;
 }
+
+DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam);
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+  static LPCWSTR wndSubKey = L"SOFTWARE\\SchoolDaysCounter";
+  static LPCWSTR configPathValueName = L"ConfigPath";
+  static LPCWSTR runInTrayValueName = L"RunInTrayFirst";
+  static const char* myValueData = "Hello, Registry, привет!";
+  static HWND hEdit = NULL;
+  static HANDLE hThread = NULL;
+  static HANDLE hMutex = NULL;
   switch (msg)
   {
   case WM_CREATE:
   {
+    hMutex = CreateMutexW(NULL, TRUE, xorstr_(L"SchoolDayCounterMutex1"));
+    FunctionHandlerR(hMutex == INVALID_HANDLE_VALUE, "Could not create mutex", {
+      PostQuitMessage(0);
+      break;
+    });
+    LPTSTR rConfigPath = NULL;
+    DWORD rRunInTrayFlag;
+    if (CreateRegistryKey(HKEY_CURRENT_USER, wndSubKey)) {
+      if(!CheckRegistryValue(HKEY_CURRENT_USER, wndSubKey, configPathValueName, REG_SZ)){
+        SetRegistrySZValue(HKEY_CURRENT_USER, wndSubKey, configPathValueName, L"sdc_config.json");
+      }
+      if(!CheckRegistryValue(HKEY_CURRENT_USER, wndSubKey, runInTrayValueName, REG_DWORD)){
+        SetRegistryDWValue(HKEY_CURRENT_USER, wndSubKey, runInTrayValueName, 0);
+      }
+
+      // RegDeleteTreeW(HKEY_CURRENT_USER, wndSubKey);
+    }else{
+      PostQuitMessage(0);
+      break;
+    }
+    rConfigPath = GetRegistrySZValue(HKEY_CURRENT_USER, wndSubKey, configPathValueName);
+    if (rConfigPath != NULL) {
+      wcout << "Read from registry: " << rConfigPath << endl;
+    }
+    rRunInTrayFlag = GetRegistryDWValue(HKEY_CURRENT_USER, wndSubKey, runInTrayValueName);
+      cout << "Read from registry: " << rRunInTrayFlag << endl;
+    RECT dWnd;
+    GetClientRect(hwnd, &dWnd);
+    cout << dWnd << endl;
     HDC hdc = GetDC(hwnd);
     NONCLIENTMETRICS metrics = {};
     metrics.cbSize = sizeof(metrics);
@@ -187,45 +438,45 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     HFONT guiFont = CreateFontIndirect(&metrics.lfMessageFont);
 
-    //cout << metrics.lfMenuFont << endl;
-
     HFONT hOldFont = (HFONT)SelectObject(hdc, guiFont);
+    HWND hStatusBar = DoCreateStatusBar(hwnd);
+    RECT dStatusBar;
+    GetClientRect(hStatusBar, &dStatusBar);
+    cout << dStatusBar << endl;
+    int dWhndHalf = (dWnd.right-15)/2;
     CreateWindowW(WC_BUTTON, WideFromUtf8("Обновить конфиг"),
                   WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  120, 30, 130, 30, hwnd, (HMENU)ID_BUTTON1, NULL, NULL);
+                  5, dWnd.bottom-dStatusBar.bottom-50, dWhndHalf, 20, hwnd, (HMENU)ID_BUTTON1, NULL, NULL);
 
     CreateWindowW(WC_BUTTON, WideFromUtf8("Восстановить обои"),
                   WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  120, 70, 130, 30, hwnd, (HMENU)ID_BUTTON2, NULL, NULL);
+                  dWhndHalf+10, 5, dWhndHalf+1, 40, hwnd, (HMENU)ID_BUTTON2, NULL, NULL);
 
     CreateWindowW(WC_BUTTON, WideFromUtf8("Запуск"),
                   WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  5, 5, 120, 40, hwnd, (HMENU)ID_BUTTON3, NULL, NULL);
-HWND hEdit = CreateWindowW(
-    TEXT("Edit"), // Predefined class name for edit controls
-    TEXT("Initial Text"), // Initial text in the textbox (can be empty)
-    WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, // Styles
-    10, 10, // X, Y position
-    200, 25, // Width, Height
-    hwnd, // Parent window handle
-    (HMENU)ID_EDIT1, // Control ID (for identifying messages)
-    NULL, // Application instance handle
-    NULL // Additional creation parameters
-);
+                  5, 5, dWhndHalf, 40, hwnd, (HMENU)ID_BUTTON3, NULL, NULL);
 
-    HWND statusbar = DoCreateStatusBar(hwnd, 110);
-    //= CreateWindowW(STATUSCLASSNAME, WideFromUtf8("Восстановить обои"),
-    //              SBARS_SIZEGRIP | WS_CHILD,
-    //              50, 120, 200, 30, hwnd, NULL, NULL, NULL);
-    //SendMessage(statusbar, SB_SETTEXT, SB_SIMPLEID, (LPARAM)"Your Status Text Here");
-    //int parts[] = {100, 200, -1}; // Example: two parts, then fill remaining space
-    //SendMessage(statusbar, SB_SETPARTS, (WPARAM)ARRAYSIZE(parts), (LPARAM)parts);
-    SendMessage(statusbar, SB_SETTEXT, (WPARAM)1, (LPARAM)L"Version 3.1.0"); // Set text for the first part
-    SendMessage(statusbar, SB_SETTEXT, (WPARAM)2, (LPARAM)L"Made by github.com/TheFliss"); // Set text for the second part
+    HWND hSelectFile = CreateWindowW(WC_BUTTON, WideFromUtf8("Выбрать"),
+                  WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                  5, dWnd.bottom-dStatusBar.bottom-25, 60, 20, hwnd, (HMENU)ID_BUTTON4, NULL, NULL);
+
+    HWND hRunInTray = CreateWindowW(WC_BUTTON, WideFromUtf8("Запускать в трее"),
+                  WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,
+                  dWhndHalf+10, dWnd.bottom-dStatusBar.bottom-50, dWhndHalf+1, 20, hwnd, (HMENU)ID_BUTTON5, NULL, NULL);
+    Button_SetCheck(hRunInTray, rRunInTrayFlag > 0);
+
+    RECT dSelectFile;
+    GetClientRect(hSelectFile, &dSelectFile);
+
+    hEdit = CreateWindowW(WC_EDIT, rConfigPath,
+                  WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+                  70, dWnd.bottom-dStatusBar.bottom-25, dWnd.right-15-dSelectFile.right, 20, hwnd, (HMENU)ID_EDIT1, NULL, NULL);
+
+    SendMessage(hStatusBar, SB_SETTEXT, (WPARAM)1, (LPARAM)xorstr_(L"Version 3.1.0"));
+    SendMessage(hStatusBar, SB_SETTEXT, (WPARAM)2, (LPARAM)xorstr_(L"Made by github.com/TheFliss"));
     EnumChildWindows(hwnd, [](HWND hwnd, LPARAM lParam) -> BOOL {
       HFONT hfDefault = *(HFONT *) lParam;
       SendMessage(hwnd, WM_SETFONT, (WPARAM) hfDefault, TRUE);
-      SetWindowTheme(hwnd, L"Explorer", NULL);
       return TRUE;
     }, (LPARAM)&guiFont);
     SelectObject(hdc, hOldFont);
@@ -238,16 +489,77 @@ HWND hEdit = CreateWindowW(
     switch (LOWORD(wParam))
     {
     case ID_BUTTON1:
-      MessageBoxW(hwnd, L"Нажата кнопка 1", L"Информация", MB_OK);
+    {
+      int textLength = GetWindowTextLength(hEdit) + 1;
+
+      LPTSTR pszBuf = NULL;
+      pszBuf = (LPTSTR)LocalAlloc(LPTR, textLength * sizeof(TCHAR));
+
+      FunctionHandler(pszBuf == NULL, "Could not allocate pointer");
+
+      GetWindowText(hEdit, pszBuf, textLength);
+
+      SetRegistrySZValue(HKEY_CURRENT_USER, wndSubKey, configPathValueName, pszBuf);
+
+      LocalFree(pszBuf);
       break;
+    }
     case ID_BUTTON2:
-      MessageBoxW(hwnd, L"Нажата кнопка 2", L"Информация", MB_OK);
+      resetWallpaperWindow();
       break;
     case ID_BUTTON3:
-      MinimizeToTray(hwnd);
+    {
+      sdc_thread_vars_t* threadParams = new sdc_thread_vars_t(
+        hMutex,
+        hwnd,
+        GetRegistrySZValue(HKEY_CURRENT_USER, wndSubKey, configPathValueName)
+      );
+      hThread = CreateThread(NULL, 0, &MainSDCThreadProc, threadParams, 0, NULL);
+      LocalFree(threadParams->lpConfigPath);
+      delete[] threadParams;
       break;
+    }
+    case ID_BUTTON4:
+    {
+      IFileOpenDialog *pFileOpen;
+
+      HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, 
+              IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen));
+
+      if (SUCCEEDED(hr))
+      {
+          hr = pFileOpen->Show(NULL);
+
+          if (SUCCEEDED(hr)) {
+            IShellItem *pItem;
+            hr = pFileOpen->GetResult(&pItem);
+            if (SUCCEEDED(hr)) {
+              PWSTR pszFilePath;
+              hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+
+              if (SUCCEEDED(hr)) {
+                Edit_SetText(hEdit, pszFilePath);
+                SetRegistrySZValue(HKEY_CURRENT_USER, wndSubKey, configPathValueName, pszFilePath);
+                CoTaskMemFree(pszFilePath);
+              }
+
+              pItem->Release();
+            }
+          }
+          pFileOpen->Release();
+      }
+      break;
+    }
+    case ID_BUTTON5:
+    {
+      if (HIWORD(wParam) == BN_CLICKED)
+      {
+        SetRegistryDWValue(HKEY_CURRENT_USER, wndSubKey, runInTrayValueName, IsDlgButtonChecked(hwnd, ID_BUTTON5) == BST_CHECKED);
+      }
+      break;
+    }
     case ID_TRAY_RESTORE:
-      RestoreFromTray(hwnd);
+      RestoreFromTray(hwnd, hThread);
       break;
     case ID_TRAY_EXIT:
       PostMessage(hwnd, WM_CLOSE, 0, 0);
@@ -260,7 +572,7 @@ HWND hEdit = CreateWindowW(
     {
       MinimizeToTray(hwnd);
       return 0;
-    }
+    }else
     break;
   case WM_CLOSE:
     DestroyWindow(hwnd);
@@ -273,7 +585,7 @@ HWND hEdit = CreateWindowW(
     switch (LOWORD(lParam))
     {
     case WM_LBUTTONUP:
-      RestoreFromTray(hwnd);
+      RestoreFromTray(hwnd, hThread);
       break;
     case WM_RBUTTONUP:
       ShowTrayMenu(hwnd);
@@ -293,57 +605,87 @@ void DestroyConsole(){
 }
 
 void InitializeConsole(){
-  // Initialize console with stdout/stderr
   AllocConsole();
   freopen_s(&fc, "CONOUT$", "w", stdout);
   freopen_s(&fc, "CONOUT$", "w", stderr);
 
-  //_setmode(_fileno(fc), _O_U8TEXT);
-  // Enable ANSI-Escape codes for colours
   HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE);
   DWORD consoleMode;
 
   GetConsoleMode(consoleHandle, &consoleMode);
   consoleMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
   SetConsoleMode(consoleHandle, consoleMode);
-  SetConsoleTitleW(L"SDC");
+  SetConsoleTitleW(L"[SDC] Debug Console");
 }
+
+#pragma endregion
+
+#pragma region Window main
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
+  UNREFERENCED_PARAMETER(hPrevInstance);
+  UNREFERENCED_PARAMETER(lpCmdLine);
+  UNREFERENCED_PARAMETER(nCmdShow);
   setlocale(LC_ALL, "Russian");
-  InitializeConsole();
+
+  HANDLE hMutex = CreateMutexW(NULL, TRUE, xorstr_(L"SchoolDayCounterMutex0"));
+
+  if (GetLastError() == ERROR_ALREADY_EXISTS) {
+    MessageBoxW(NULL, WideFromUtf8("Другой экземпляр этого приложения уже запущен."), WideFromUtf8("Внимание"), MB_OK | MB_ICONWARNING);
+    CloseHandle(hMutex);
+    return EXIT_FAILURE;
+  }
+
   INITCOMMONCONTROLSEX icc;
   icc.dwSize = sizeof(icc);
   icc.dwICC = ICC_STANDARD_CLASSES;
   InitCommonControlsEx(&icc);
 
+  FunctionHandlerR(FAILED(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | 
+      COINIT_DISABLE_OLE1DDE)), "Could not initialize the COM library", {
+    return EXIT_FAILURE;
+  });
+
+#ifdef DEBUG
+  InitializeConsole();
+#endif
+
   WNDCLASSEXW wc = {};
   wc.cbSize = sizeof(WNDCLASSEX);
   wc.lpfnWndProc = WndProc;
+  //wc.style  = CS_HREDRAW | CS_VREDRAW;
   wc.hInstance = hInstance;
-  wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-  wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-  wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+  wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_APPICON));
+  wc.hCursor = LoadCursor(hInstance, IDC_ARROW);
+  wc.hbrBackground = (HBRUSH)(COLOR_WINDOWFRAME);
   wc.lpszClassName = g_szClassName;
 
   if (!RegisterClassExW(&wc))
   {
     MessageBoxW(NULL, WideFromUtf8("Ошибка регистрации окна!"), WideFromUtf8("Ошибка"), MB_ICONERROR);
-    return 0;
+    return EXIT_FAILURE;
   }
 
   HWND hwnd = CreateWindowExW(0, g_szClassName, WideFromUtf8("School Days Counter"),
                               WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
-                              CW_USEDEFAULT, CW_USEDEFAULT, 300, 200, NULL, NULL, hInstance, NULL);
+                              CW_USEDEFAULT, CW_USEDEFAULT, 300, 162, NULL, NULL, hInstance, NULL);
 
   if (!hwnd)
   {
     MessageBoxW(NULL, WideFromUtf8("Ошибка создания окна!"), WideFromUtf8("Ошибка"), MB_ICONERROR);
-    return 0;
+    return EXIT_FAILURE;
   }
 
-  ShowWindow(hwnd, nCmdShow);
+  {
+    static LPCWSTR wndSubKey = L"SOFTWARE\\SchoolDaysCounter";
+    static LPCWSTR runInTrayValueName = L"RunInTrayFirst";
+    if(CheckRegistryValue(HKEY_CURRENT_USER, wndSubKey, runInTrayValueName, REG_DWORD)
+        && GetRegistryDWValue(HKEY_CURRENT_USER, wndSubKey, runInTrayValueName)){
+      ShowWindow(hwnd, SW_SHOWMINNOACTIVE);
+    }else
+      ShowWindow(hwnd, SW_SHOW);
+  }
 
   SetWindowTheme(hwnd, L"Explorer", NULL);
   UpdateWindow(hwnd);
@@ -354,8 +696,93 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
+  CoUninitialize();
+  CloseHandle(hMutex);
 
   return (int)msg.wParam;
+}
+
+
+DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
+  sdc_thread_vars_t *threadParams = (sdc_thread_vars_t*)lpParam;
+  LPTSTR lpConfig = (LPTSTR)threadParams->lpConfigPath;
+  DWORD i;
+  HWND hWallpaper = FindWallpaperWindow();
+  if (!hWallpaper) {
+    MessageBox(nullptr, L"Не удалось найти окно обоев", L"Ошибка", MB_ICONERROR);
+    LocalFree(lpConfig);
+    ExitThread(1);
+  }
+
+  vector<unique_ptr<Timer>> timers;
+
+  sdc_config_t sdc_config;
+  try {
+    auto sdccstream = ifstream(ConvertWideToUtf8(wstring(lpConfig)));
+
+    json j = json::parse(sdccstream, nullptr, true, true);
+
+    sdc_config = j.get<sdc_config_t>();
+
+    sdccstream.close();
+  } catch(const exception& e) {
+    string errmsg = string("Exception caught while reading config file:\n") + e.what();
+    MessageBoxW(NULL, WideFromUtf8s(errmsg), WideFromUtf8("Ошибка"), MB_ICONERROR);
+    LocalFree(lpConfig);
+    ExitThread(1);
+  }
+
+  {
+    for(auto &x : sdc_config.timers){
+      Timer current_timer(x);
+      timers.push_back(make_unique<Timer>(current_timer));
+    }
+  }
+
+  HDC hdc = GetDC(hWallpaper);
+
+  RECT cr;
+  GetClientRect(hWallpaper, &cr);
+
+  float scale = (float)GetDpiForWindow(hWallpaper)/96.0f;
+
+  cr.right = (LONG)round((float)cr.right*scale);
+  cr.bottom = (LONG)round((float)cr.bottom*scale);
+
+  //saving original wp hdc
+  HDC hdcSRC = CreateCompatibleDC(hdc);
+  HBITMAP hbmSRC = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
+  HANDLE hOldSRC = SelectObject(hdcSRC, hbmSRC);
+  BitBlt(hdcSRC, 0, 0, cr.right, cr.bottom, hdc, 0, 0, SRCCOPY);
+
+  HWND hwndDesktop = GetDesktopWindow(); 
+
+  HDC hdcMem = CreateCompatibleDC(hdc);
+  HBITMAP hbmMem = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
+  HANDLE hOld = SelectObject(hdcMem, hbmMem);
+
+  MinimizeToTray(threadParams->hwnd);
+  while(1){
+    BitBlt(hdcMem, 0, 0, cr.right, cr.bottom, hdcSRC, 0, 0, SRCCOPY);
+    for(auto &x : timers)
+      x->render(hdcMem, &cr);
+
+    BitBlt(hdc, 0, 0, cr.right, cr.bottom, hdcMem, 0, 0, SRCCOPY);
+    Sleep(sdc_config.update_delay);
+  }
+
+  BitBlt(hdc, 0, 0, cr.right, cr.bottom, hdcSRC, 0, 0, SRCCOPY);
+  SelectObject(hdcMem, hOld);
+  SelectObject(hdcSRC, hOldSRC);
+
+  DeleteObject(hbmMem);
+  DeleteDC (hdcMem);
+  DeleteObject(hbmSRC);
+  DeleteDC (hdcSRC);
+
+  ReleaseDC(hWallpaper, hdc);
+  LocalFree(lpConfig);
+  ExitThread(0);
 }
 
 int main(int argc, char const *argv[]) {
@@ -511,3 +938,5 @@ int main(int argc, char const *argv[]) {
 
   return 0;
 }
+
+#pragma endregion

@@ -2,6 +2,9 @@
 #define CONFIG_H
 
 #include "pch.h"
+#include "json/json.hpp"
+
+using json = nlohmann::json;
 
 struct config_vec2_t {
   float x, y;
@@ -25,6 +28,7 @@ struct sdc_config_t {
   vector<timer_t> timers;
 };
 
+void from_json(const json& j, sdc_config_t& c);
 sdc_config_t parse_config(fs::path fp);
 
 #endif /* CONFIG_H */

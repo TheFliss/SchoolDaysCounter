@@ -8,6 +8,8 @@
 #define UNICODE
 
 #include <Windows.h>
+#include <shobjidl.h> 
+#include <Windowsx.h>
 #include <shlwapi.h>
 #include <shellapi.h>
 #include <Uxtheme.h>
@@ -44,10 +46,12 @@
 using namespace std;
 namespace fs = std::filesystem;
 
+#include "resource.h"
 #define ID_BUTTON1 101
 #define ID_BUTTON2 102
 #define ID_BUTTON3 103
 #define ID_BUTTON4 104
+#define ID_BUTTON5 105
 #define ID_EDIT1 120
 #define ID_TRAY_ICON 110
 #define ID_TRAY_RESTORE 111
