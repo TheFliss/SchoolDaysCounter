@@ -68,6 +68,35 @@ HWND FindWallpaperWindow() {
   return hWallpaperWnd;
 }
 
+vector<HWND> FindAllWallpaperWindows() {
+  vector<HWND> result;
+  HWND hProgman = FindWindow(TEXT("ProgMan"), nullptr);
+  if (!hProgman) return result;
+
+  SendMessage(hProgman, 0x052C, 0, 0);
+
+  EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
+    if (FindWindowEx(hwnd, nullptr, TEXT("SHELLDLL_DefView"), nullptr)) {
+      vector<HWND>* windows = reinterpret_cast<vector<HWND>*>(lParam);
+      windows->push_back(FindWindowEx(nullptr, hwnd, TEXT("WorkerW"), nullptr));
+    }
+    //wchar_t className[256];
+    //GetClassName(hwnd, className, 256);
+    
+    //// Если это окно WorkerW и оно видимо
+    //if (wcscmp(className, L"WorkerW") == 0 && IsWindowVisible(hwnd)) {
+    //  if (FindWindowEx(hwnd, nullptr, L"SHELLDLL_DefView", nullptr)) {
+    //    vector<HWND>* windows = reinterpret_cast<vector<HWND>*>(lParam);
+    //    windows->push_back(hwnd);
+    //  }
+    //}
+    return TRUE;
+  }, reinterpret_cast<LPARAM>(&result));
+
+  return result;
+}
+
+
 //https://habr.com/ru/articles/185252/
 
 //https://stackoverflow.com/a/56107709
@@ -398,6 +427,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
   static HWND hEdit = NULL;
   static HANDLE hThread = NULL;
   static HANDLE hMutex = NULL;
+  static sdc_thread_vars_t* threadParams = nullptr;
   switch (msg)
   {
   case WM_CREATE:
@@ -472,7 +502,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                   WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
                   70, dWnd.bottom-dStatusBar.bottom-25, dWnd.right-15-dSelectFile.right, 20, hwnd, (HMENU)ID_EDIT1, NULL, NULL);
 
-    SendMessage(hStatusBar, SB_SETTEXT, (WPARAM)1, (LPARAM)xorstr_(L"Version 3.1.0"));
+    SendMessage(hStatusBar, SB_SETTEXT, (WPARAM)1, (LPARAM)xorstr_(L"Version 3.2.0"));
     SendMessage(hStatusBar, SB_SETTEXT, (WPARAM)2, (LPARAM)xorstr_(L"Made by github.com/TheFliss"));
     EnumChildWindows(hwnd, [](HWND hwnd, LPARAM lParam) -> BOOL {
       HFONT hfDefault = *(HFONT *) lParam;
@@ -483,13 +513,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     ReleaseDC(hwnd, hdc);
     if(rRunInTrayFlag){
-      sdc_thread_vars_t* threadParams = new sdc_thread_vars_t(
+      if(threadParams != nullptr)
+        delete[] threadParams;
+      threadParams = new sdc_thread_vars_t(
         hwnd,
         FALSE
       );
       g_exitFromThread = false;
       hThread = CreateThread(NULL, 0, &MainSDCThreadProc, threadParams, 0, NULL);
-      delete[] threadParams;
     }
     break;
   }
@@ -526,13 +557,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
           break;
         }
       }
-      sdc_thread_vars_t* threadParams = new sdc_thread_vars_t(
+      if(threadParams != nullptr)
+        delete[] threadParams;
+      threadParams = new sdc_thread_vars_t(
         hwnd,
         TRUE
       );
       g_exitFromThread = false;
       hThread = CreateThread(NULL, 0, &MainSDCThreadProc, threadParams, 0, NULL);
-      delete[] threadParams;
       break;
     }
     case ID_BUTTON4:
@@ -594,7 +626,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     DestroyWindow(hwnd);
     break;
   case WM_DESTROY:
+    if(hThread != NULL)
+      TerminateThread(hThread, 0);
     Shell_NotifyIcon(NIM_DELETE, &g_tnd);
+    resetWallpaperWindow();
     PostQuitMessage(0);
     break;
   case WM_TRAYICON:
@@ -638,6 +673,8 @@ void InitializeConsole(){
 
 #pragma region Window main
 
+static vector<MONITORINFO> vMonitors{};
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
   UNREFERENCED_PARAMETER(hPrevInstance);
@@ -666,6 +703,47 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 #ifdef DEBUG
   InitializeConsole();
 #endif
+
+  EnumDisplayMonitors(NULL, NULL, [](HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM lParam) -> BOOL {
+    MONITORINFO info;
+    info.cbSize = sizeof(MONITORINFO);
+    GetMonitorInfo(hMonitor, &info);
+
+    //MONITORINFOEX monInfo;
+    //monInfo.cbSize = sizeof(MONITORINFOEX);
+
+    //if (GetMonitorInfo(hMonitor, &monInfo)) {
+    //    DISPLAY_DEVICE displayDevice;
+    //    displayDevice.cb = sizeof(DISPLAY_DEVICE);
+
+    //    // Use the device name from MONITORINFOEX to get more details
+    //    if (EnumDisplayDevices(monInfo.szDevice, 0, &displayDevice, 0)) {
+    //        // The DeviceString field contains the friendly name
+    //        wcout << displayDevice.DeviceString << endl;
+    //    }
+    //}
+    vMonitors.push_back(info);
+    return TRUE;
+  }, NULL);
+
+  {
+    LONG mLeft = 0;
+    LONG mTop = 0;
+    for(auto &&x : vMonitors){
+      //cout << x.rcWork << endl;
+      mLeft = min(mLeft, x.rcWork.left);
+      mTop = min(mTop, x.rcWork.top);
+    }
+    //cout << mLeft << endl;
+    //cout << mTop << endl;
+    for(auto &&x : vMonitors){
+      x.rcWork.left-=mLeft;
+      x.rcWork.top-=mTop;
+      x.rcWork.right-=mLeft;
+      x.rcWork.bottom-=mTop;
+      //cout << x.rcWork << endl;
+    }
+  }
 
   WNDCLASSEXW wc = {};
   wc.cbSize = sizeof(WNDCLASSEX);
@@ -718,7 +796,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
   return (int)msg.wParam;
 }
 
-
 DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   sdc_thread_vars_t *threadParams = (sdc_thread_vars_t*)lpParam;
   LPTSTR lpConfig = NULL;
@@ -731,6 +808,11 @@ DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   }
   //cout << (LPVOID)lpConfig << endl;
   //MessageBox(NULL, lpConfig, L"Lol", MB_OK);
+  vector<HWND> vWallpapers = FindAllWallpaperWindows();
+  for(auto& x : vWallpapers){
+    cout << x << endl;
+  }
+
   DWORD i;
   HWND hWallpaper = FindWallpaperWindow();
   if (!hWallpaper) {
@@ -767,6 +849,7 @@ DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   }
 
   HDC hdc = GetDC(hWallpaper);
+  cout << hWallpaper << endl;
 
   RECT cr;
   GetClientRect(hWallpaper, &cr);
@@ -783,6 +866,7 @@ DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   BitBlt(hdcSRC, 0, 0, cr.right, cr.bottom, hdc, 0, 0, SRCCOPY);
 
   HWND hwndDesktop = GetDesktopWindow(); 
+  cout << hwndDesktop << endl;
 
   HDC hdcMem = CreateCompatibleDC(hdc);
   HBITMAP hbmMem = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
@@ -791,14 +875,16 @@ DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   if(threadParams->Minimize)
     MinimizeToTray(threadParams->hwnd);
   while(1){
-    if(g_exitFromThread){
-      break;
-    }
+    if(g_exitFromThread) break;
+
     BitBlt(hdcMem, 0, 0, cr.right, cr.bottom, hdcSRC, 0, 0, SRCCOPY);
-    for(auto &x : timers)
-      x->render(hdcMem, &cr);
+
+    for(auto &&y : vMonitors)
+      for(auto &&x : timers)
+        x->render(hdcMem, &y.rcWork);
 
     BitBlt(hdc, 0, 0, cr.right, cr.bottom, hdcMem, 0, 0, SRCCOPY);
+
     Sleep(sdc_config.update_delay);
   }
 

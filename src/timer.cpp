@@ -71,7 +71,7 @@ void Timer::render(HDC hdc, RECT *cr) {
   SetBkMode(hdc, TRANSPARENT);
 
   HFONT hFont = CreateFont(
-    (int)(cfg.font_size*cr->bottom/100.0f), 0, 0, 0, FW_NORMAL, 
+    (int)(cfg.font_size*(cr->bottom-cr->top)/100.0f), 0, 0, 0, FW_NORMAL, 
     FALSE, FALSE, FALSE, DEFAULT_CHARSET,
     OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
     DEFAULT_QUALITY, DEFAULT_PITCH, L"Calibri"
@@ -113,11 +113,11 @@ void Timer::render(HDC hdc, RECT *cr) {
   int textWidth = textRect.right - textRect.left;
   int textHeight = textRect.bottom - textRect.top;
 
-  int xPos = (int)(cfg.offset.x*cr->right/100.0f);
+  int xPos = cr->left+(int)(cfg.offset.x*(cr->right-cr->left)/100.0f);
 
   int lmargin_x;
   if(cfg.fixed_size.x < 0){
-    lmargin_x = (int)(cfg.margin.x*cr->right/100.0f)+textWidth;
+    lmargin_x = (int)(cfg.margin.x*(cr->right-cr->left)/100.0f)+textWidth;
   }else{
     lmargin_x = (int)(cfg.fixed_size.x);
   }
@@ -127,22 +127,22 @@ void Timer::render(HDC hdc, RECT *cr) {
     case 1:
     case 4:
     case 7:
-      xPos += (int)(cr->right/2.0f);
+      xPos += (int)((cr->right-cr->left)/2.0f);
       break;
     case 2:
     case 5:
     case 8:
-      xPos += cr->right-lmargin_x/2;
+      xPos += (cr->right-cr->left)-lmargin_x/2;
       break;
     default:
       xPos += lmargin_x;
       break;
   }
 
-  int yPos = (int)(cfg.offset.y*cr->bottom/100.0f);
+  int yPos = cr->top+(int)(cfg.offset.y*(cr->bottom-cr->top)/100.0f);
   int lmargin_y;
   if(cfg.fixed_size.y < 0){
-    lmargin_y = (int)(cfg.margin.y*cr->bottom/100.0f)+textHeight;
+    lmargin_y = (int)(cfg.margin.y*(cr->bottom-cr->top)/100.0f)+textHeight;
   }else{
     lmargin_y = (int)(cfg.fixed_size.y);
   }
@@ -152,12 +152,12 @@ void Timer::render(HDC hdc, RECT *cr) {
     case 3:
     case 4:
     case 5:
-      yPos += (int)(cr->bottom/2.0f);
+      yPos += (int)((cr->bottom-cr->top)/2.0f);
       break;
     case 6:
     case 7:
     case 8:
-      yPos += cr->bottom-lmargin_y/2;
+      yPos += (cr->bottom-cr->top)-lmargin_y/2;
       break;
     default:
       yPos += lmargin_y/2;
@@ -191,7 +191,7 @@ void Timer::render(HDC hdc, RECT *cr) {
   AlphaBlend(
     hdc, 
     bgRect.left, bgRect.top, 
-    bgRect.right - bgRect.left, bgRect.bottom - bgRect.top,
+    min(bgRect.right - bgRect.left, cr->right-cr->left), min(bgRect.bottom - bgRect.top, cr->bottom-cr->top),
     hdcAlpha, 
     0, 0, 
     bgRect.right - bgRect.left, bgRect.bottom - bgRect.top,
@@ -203,7 +203,6 @@ void Timer::render(HDC hdc, RECT *cr) {
   textRect.right = xPos + textWidth/2;
   textRect.bottom = yPos + textHeight/2;
   DrawText(hdc, ConvertUtf8ToWide(display_str).c_str(), -1, &textRect, DT_LEFT);
-  BitBlt(hdc, 0, 0, cr->right, cr->bottom, hdc, 0, 0, SRCCOPY);
 
   SelectObject(hdcAlpha, hOldBmpAlpha);
   SelectObject(hdc, hOldFont);

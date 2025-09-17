@@ -8,7 +8,8 @@
 #define UNICODE
 
 #include <Windows.h>
-#include <shobjidl.h> 
+#include <shobjidl.h>
+#include <atlbase.h>
 #include <Windowsx.h>
 #include <shlwapi.h>
 #include <shellapi.h>
