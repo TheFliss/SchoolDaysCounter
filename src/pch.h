@@ -9,6 +9,7 @@
 
 #include <Windows.h>
 #include <shobjidl.h>
+#include <shellscalingapi.h>
 #include <atlbase.h>
 #include <Windowsx.h>
 #include <shlwapi.h>

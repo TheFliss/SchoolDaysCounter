@@ -3,10 +3,10 @@
         {
             "name": "Win32",
             "includePath": [
-                "${workspaceFolder}/**",
-                "${workspaceFolder}/../cmake_libs/SDL3_image-3.2.4/include",
-                "${workspaceFolder}/../cmake_libs/SDL3_ttf-3.2.2/include",
-                "${workspaceFolder}/../cmake_libs/SDL3-3.2.20/include"
+                "${workspaceFolder}/**"
+                //"${workspaceFolder}/../cmake_libs/SDL3_image-3.2.4/include",
+                //"${workspaceFolder}/../cmake_libs/SDL3_ttf-3.2.2/include",
+                //"${workspaceFolder}/../cmake_libs/SDL3-3.2.20/include"
             ],
             "defines": [
                 "_DEBUG",

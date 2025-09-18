@@ -38,6 +38,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   Shlwapi.lib
   Msimg32.lib
   Comctl32.lib
+  Shcore.lib
   UxTheme.lib
 )
 

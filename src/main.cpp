@@ -267,7 +267,7 @@ BOOL SetRegistrySZValue(HKEY hKeyParent, LPCWSTR subkey, LPCWSTR valueName, LPCW
     0,
     REG_SZ,
     (LPBYTE)data,
-    (wcslen(data) + 1) * sizeof(wchar_t)
+    ((DWORD)wcslen(data) + 1) * sizeof(wchar_t)
   );
 
   FunctionHandlerR(lResult, "Error setting registry value", {
@@ -502,7 +502,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                   WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
                   70, dWnd.bottom-dStatusBar.bottom-25, dWnd.right-15-dSelectFile.right, 20, hwnd, (HMENU)ID_EDIT1, NULL, NULL);
 
-    SendMessage(hStatusBar, SB_SETTEXT, (WPARAM)1, (LPARAM)xorstr_(L"Version 3.2.0"));
+    SendMessage(hStatusBar, SB_SETTEXT, (WPARAM)1, (LPARAM)xorstr_(L"Version 3.2.1"));
     SendMessage(hStatusBar, SB_SETTEXT, (WPARAM)2, (LPARAM)xorstr_(L"Made by github.com/TheFliss"));
     EnumChildWindows(hwnd, [](HWND hwnd, LPARAM lParam) -> BOOL {
       HFONT hfDefault = *(HFONT *) lParam;
@@ -649,6 +649,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
   return 0;
 }
 
+#ifdef DEBUG
 FILE* fc;
 void DestroyConsole(){
   fclose(fc);
@@ -668,12 +669,24 @@ void InitializeConsole(){
   SetConsoleMode(consoleHandle, consoleMode);
   SetConsoleTitleW(L"[SDC] Debug Console");
 }
+#endif
 
 #pragma endregion
 
 #pragma region Window main
 
+#ifdef DEBUG
+std::ostream&
+operator<<(std::ostream& os, const POINTL& x)
+{
+  os << x.x << " x "
+      << x.y << " y";
+  return os;
+}
+#endif
+
 static vector<MONITORINFO> vMonitors{};
+static POINTL minMonitorPos{};
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
@@ -704,44 +717,57 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
   InitializeConsole();
 #endif
 
-  EnumDisplayMonitors(NULL, NULL, [](HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM lParam) -> BOOL {
-    MONITORINFO info;
-    info.cbSize = sizeof(MONITORINFO);
-    GetMonitorInfo(hMonitor, &info);
-
-    //MONITORINFOEX monInfo;
-    //monInfo.cbSize = sizeof(MONITORINFOEX);
-
-    //if (GetMonitorInfo(hMonitor, &monInfo)) {
-    //    DISPLAY_DEVICE displayDevice;
-    //    displayDevice.cb = sizeof(DISPLAY_DEVICE);
-
-    //    // Use the device name from MONITORINFOEX to get more details
-    //    if (EnumDisplayDevices(monInfo.szDevice, 0, &displayDevice, 0)) {
-    //        // The DeviceString field contains the friendly name
-    //        wcout << displayDevice.DeviceString << endl;
-    //    }
-    //}
-    vMonitors.push_back(info);
-    return TRUE;
-  }, NULL);
-
   {
-    LONG mLeft = 0;
-    LONG mTop = 0;
+    EnumDisplayMonitors(NULL, NULL, [](HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM lParam) -> BOOL {
+      UNREFERENCED_PARAMETER(hdcMonitor);
+      UNREFERENCED_PARAMETER(lprcMonitor);
+      UNREFERENCED_PARAMETER(lParam);
+      MONITORINFO info;
+      info.cbSize = sizeof(MONITORINFO);
+      FunctionHandler(!GetMonitorInfo(hMonitor, &info), "Failed to get monitor info");
+
+      MONITORINFOEX monInfo;
+      monInfo.cbSize = sizeof(MONITORINFOEX);
+      DISPLAY_DEVICE displayDevice;
+      displayDevice.cb = sizeof(DISPLAY_DEVICE);
+      DEVMODE devmode = {};
+      devmode.dmSize = sizeof(DEVMODE);
+
+      if (GetMonitorInfo(hMonitor, &monInfo)) {
+        FunctionHandler(!EnumDisplayDevices(monInfo.szDevice, 0, &displayDevice, 0), "Failed to get DISPLAY_DEVICE for monitor");
+        FunctionHandler(!EnumDisplaySettings(monInfo.szDevice, ENUM_CURRENT_SETTINGS, &devmode), "Failed to get ENUM_CURRENT_SETTINGS for monitor");
+      }
+      minMonitorPos.x = min(minMonitorPos.x, devmode.dmPosition.x);
+      minMonitorPos.y = min(minMonitorPos.y, devmode.dmPosition.y);
+#ifdef DEBUG
+      wcout << displayDevice.DeviceString << endl;
+      cout << "  Pos: " << devmode.dmPosition << endl;
+      cout << "  Width:  " << devmode.dmPelsWidth << endl;
+      cout << "  Height: " << devmode.dmPelsHeight << endl;
+      cout << "  Work:   " << info.rcWork << endl;
+#endif
+      info.rcWork = {
+        devmode.dmPosition.x,
+        devmode.dmPosition.y,
+        devmode.dmPosition.x+(LONG)devmode.dmPelsWidth,
+        devmode.dmPosition.y+(LONG)devmode.dmPelsHeight
+      };
+      vMonitors.push_back(info);
+      return TRUE;
+    }, NULL);
+
+#ifdef DEBUG
+    cout << minMonitorPos << endl;
+#endif
+
     for(auto &&x : vMonitors){
-      //cout << x.rcWork << endl;
-      mLeft = min(mLeft, x.rcWork.left);
-      mTop = min(mTop, x.rcWork.top);
-    }
-    //cout << mLeft << endl;
-    //cout << mTop << endl;
-    for(auto &&x : vMonitors){
-      x.rcWork.left-=mLeft;
-      x.rcWork.top-=mTop;
-      x.rcWork.right-=mLeft;
-      x.rcWork.bottom-=mTop;
-      //cout << x.rcWork << endl;
+      x.rcWork.left-=minMonitorPos.x;
+      x.rcWork.top-=minMonitorPos.y;
+      x.rcWork.right-=minMonitorPos.x;
+      x.rcWork.bottom-=minMonitorPos.y;
+#ifdef DEBUG
+      cout << x.rcWork << endl;
+#endif
     }
   }
 
@@ -806,14 +832,7 @@ DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
       lpConfig = GetRegistrySZValue(HKEY_CURRENT_USER, wndSubKey, configPathValueName);
     }
   }
-  //cout << (LPVOID)lpConfig << endl;
-  //MessageBox(NULL, lpConfig, L"Lol", MB_OK);
-  vector<HWND> vWallpapers = FindAllWallpaperWindows();
-  for(auto& x : vWallpapers){
-    cout << x << endl;
-  }
 
-  DWORD i;
   HWND hWallpaper = FindWallpaperWindow();
   if (!hWallpaper) {
     MessageBox(nullptr, L"Не удалось найти окно обоев", L"Ошибка", MB_ICONERROR);
@@ -837,7 +856,6 @@ DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   } catch(const exception& e) {
     string errmsg = string("Exception caught while reading config file:\n") + e.what();
     MessageBoxW(NULL, WideFromUtf8s(errmsg), WideFromUtf8("Ошибка"), MB_ICONERROR);
-    //RestoreFromTray(threadParams->hwnd, NULL);
     ExitThread(1);
   }
 
@@ -859,14 +877,15 @@ DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   cr.right = (LONG)round((float)cr.right*scale);
   cr.bottom = (LONG)round((float)cr.bottom*scale);
 
+#ifdef DEBUG
+    cout << cr << endl;
+#endif
+
   //saving original wp hdc
   HDC hdcSRC = CreateCompatibleDC(hdc);
   HBITMAP hbmSRC = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
   HANDLE hOldSRC = SelectObject(hdcSRC, hbmSRC);
   BitBlt(hdcSRC, 0, 0, cr.right, cr.bottom, hdc, 0, 0, SRCCOPY);
-
-  HWND hwndDesktop = GetDesktopWindow(); 
-  cout << hwndDesktop << endl;
 
   HDC hdcMem = CreateCompatibleDC(hdc);
   HBITMAP hbmMem = CreateCompatibleBitmap(hdc, cr.right, cr.bottom);
@@ -898,8 +917,6 @@ DWORD WINAPI MainSDCThreadProc(CONST LPVOID lpParam) {
   DeleteDC (hdcSRC);
 
   ReleaseDC(hWallpaper, hdc);
-  //RestoreFromTray(threadParams->hwnd, NULL);
-  //LocalFree(lpConfig);
   ExitThread(0);
 }
 

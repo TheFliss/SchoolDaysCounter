@@ -13,7 +13,7 @@ void DisplayError(LPCTSTR desc, UINT uType);
 #endif
 
 #define FunctionHandler(cond, desc) if (cond) {\
-  DisplayError(xorstr_(TEXT(desc)), MB_ICONERROR);\
+  DisplayError(WideFromUtf8(desc), MB_ICONERROR);\
   exit(1);\
 }
 

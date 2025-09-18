@@ -11,6 +11,7 @@ struct date_time_t
   int s;
 };
 
+#ifdef DEBUG
 std::ostream&
 operator<<(std::ostream& os, const RECT& x)
 {
@@ -20,7 +21,6 @@ operator<<(std::ostream& os, const RECT& x)
       << x.bottom << " bottom";
   return os;
 }
-#ifdef DEBUG
 std::ostream&
 operator<<(std::ostream& os, const date_time_t& x)
 {
@@ -81,9 +81,6 @@ void Timer::render(HDC hdc, RECT *cr) {
 
   SetTextColor(hdc, RGB(255, 255, 255));
 
-  //#ifdef DEBUG
-  //cout << "rendered: " << ConvertWideToANSI(ConvertUtf8ToWide(text)) << endl;
-  //#endif
   time_t timestamp_now = time(&timestamp_now);
   tm st = *localtime(&timestamp_now);
 
@@ -187,7 +184,10 @@ void Timer::render(HDC hdc, RECT *cr) {
   bf.SourceConstantAlpha = 128;
   bf.AlphaFormat = 0;
 
+#ifdef DEBUG
   cout << bgRect << endl;
+#endif
+
   AlphaBlend(
     hdc, 
     bgRect.left, bgRect.top, 
